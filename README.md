@@ -11,15 +11,15 @@ This project is an unofficial implementation of the paper "Context-Aware Attenti
 
 ## Useful Links
 
-* link:https://openaccess.thecvf.com/content_CVPR_2020/papers/Zhang_Context-Aware_Attention_Network_for_Image-Text_Retrieval_CVPR_2020_paper.pdf[**Paper Link**]
+* [**Paper Link**](https://openaccess.thecvf.com/content_CVPR_2020/papers/Zhang_Context-Aware_Attention_Network_for_Image-Text_Retrieval_CVPR_2020_paper.pdf)
 
-* link:https://docs.google.com/document/d/1fF8Y2ZG3iQvLiHqBY47O8yGQFobWY9JDyNRvDlUqJPQ/edit?usp=sharing [**Research Log**]
+* [**Research Log**](https://docs.google.com/document/d/1fF8Y2ZG3iQvLiHqBY47O8yGQFobWY9JDyNRvDlUqJPQ/edit?usp=sharing) 
 
-* link:https://docs.google.com/presentation/d/1lBw68_IdbSe_0n2KAlupRnDulvfzNrUMwx3sBkNl9p8/edit?usp=sharing [**Final Presentation**]
+* [**Final Presentation**](https://docs.google.com/presentation/d/1lBw68_IdbSe_0n2KAlupRnDulvfzNrUMwx3sBkNl9p8/edit?usp=sharing)
 
-* link:https://docs.google.com/spreadsheets/d/1Si1-91wCge3aq7liSTSFxGuJb3fO_-xHlAIzQkaLEyU/edit?usp=sharing [**Data Sheet**]
+* [**Data Sheet**](https://docs.google.com/spreadsheets/d/1Si1-91wCge3aq7liSTSFxGuJb3fO_-xHlAIzQkaLEyU/edit?usp=sharing) 
 
-* link:https://www.overleaf.com/read/pbtyskcsdgyt [**Tech Report**]
+* [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
 
 
 
