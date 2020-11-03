@@ -1,17 +1,17 @@
-# Context-Aware Attention Network for Image-Text Retrieval
+# RetinaFace: Single-shot Multi-level Face Localisation in the Wild
 
 * **Author:** Barış Batuhan Topal
 * **Contact:** barisbatuhantopal@gmail.com / baristopal20@ku.edu.tr
 
 ## Description
 
-This project is an unofficial implementation of the paper "Context-Aware Attention Network for Image-Text Retrieval" in Julia programming language. 
+This project is an unofficial implementation of the paper "RetinaFace: Single-shot Multi-level Face Localisation in the Wild" in Julia programming language. 
 
-**Abstract of the Paper:** As a typical cross-modal problem,  image-text bi-directional retrieval relies heavily on the joint embeddinglearning and similarity measure for each image-text pair.It remains challenging because prior works seldom exploresemantic correspondences between modalities and seman-tic correlations in a single modality at the same time. In thiswork, we propose a unified Context-Aware Attention Net-work (CAAN), which selectively focuses on critical localfragments (regions and words) by aggregating the globalcontext. Specifically, it simultaneously utilizes global inter-modal alignments and intra-modal correlations to discoverlatent semantic relations. Considering the interactions be-tween images and sentences in the retrieval process, intra-modal correlations are derived from the second-order atten-tion of region-word alignments instead of intuitively com-paring the distance between original features. Our methodachieves fairly competitive results on two generic image-text retrieval datasets Flickr30K and MS-COCO.
+**Abstract of the Paper:** Though tremendous strides have been made in uncontrolled face detection, accurate and efficient 2D face alignment and 3D face reconstruction in-the-wild remain an open challenge. In this paper, we present a novel single-shot, multi-level face localisation method, named RetinaFace, which unifies face box prediction, 2D facial landmark localisation and 3D vertices regression under one common target: point regression on the image plane. To fill the data gap, we manually annotated five facial landmarks on the WIDER FACE dataset and employed a semi-automatic annotation pipeline to generate 3D vertices for face images from the WIDER FACE, AFLW and FDDB datasets. Based on extra annotations, we propose a mutually beneficial regression target for 3D face reconstruction, that is predicting 3D vertices projected on the image plane constrained by a common 3D topology. The proposed 3D face reconstruction branch can be easily incorporated, without any optimisation difficulty, in parallel with the existing box and 2D landmark regression branches during joint training. Extensive experimental results show that RetinaFace can simultaneously achieve stable face detection, accurate 2D face alignment and robust 3D face reconstruction while being efficient through single-shot inference.
 
 ## Useful Links
 
-* [**Paper Link**](https://openaccess.thecvf.com/content_CVPR_2020/papers/Zhang_Context-Aware_Attention_Network_for_Image-Text_Retrieval_CVPR_2020_paper.pdf)
+* [**Paper Link**](https://openaccess.thecvf.com/content_CVPR_2020/papers/Deng_RetinaFace_Single-Shot_Multi-Level_Face_Localisation_in_the_Wild_CVPR_2020_paper.pdf)
 
 * [**Research Log**](https://docs.google.com/document/d/1fF8Y2ZG3iQvLiHqBY47O8yGQFobWY9JDyNRvDlUqJPQ/edit?usp=sharing) 
 
