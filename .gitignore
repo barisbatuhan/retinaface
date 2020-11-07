@@ -1,0 +1,12 @@
+# Files with big amount of data
+data/*/
+weights/*.weights
+
+# Extra Cache Files
+.DS_Store
+.vscode
+
+# Virtual Environments
+venv
+venv/*
+

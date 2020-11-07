@@ -1,0 +1,7 @@
+============================================================================================================
+The datasets can be downloaded from these links:
+============================================================================================================
+* WIDERFACE: http://shuoyang1213.me/WIDERFACE/
+* WIDERFACE Landmark Annotations: https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0
+* AFLW: https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw/
+* FDDB: http://vis-www.cs.umass.edu/fddb/
