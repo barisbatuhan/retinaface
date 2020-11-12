@@ -5,6 +5,7 @@ weights/*.weights
 # Extra Cache Files
 .DS_Store
 .vscode
+.ipynb_checkpoints
 
 # Virtual Environments
 venv

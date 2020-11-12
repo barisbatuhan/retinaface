@@ -8,4 +8,6 @@ end
 
 Pkg.add("CUDA")
 Pkg.add("Knet")
+Pkg.add("ImageView")
+Pkg.add("ImageDraw")
 

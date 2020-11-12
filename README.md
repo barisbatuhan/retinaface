@@ -21,5 +21,31 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
 
+## First Setup
 
+* All the packages required to be installed are found under `setup.jl`. To install packages to a virtual environment you can directly run that source file (you can also type `make setup` to run it), or you can install the packages in that file manually to run this project on the actual device.
+
+* All of the implementation steps are summarized with their codes in the `progress.ipynb` notebook and `main.jl` file. According to your preferences, please check these files before give a deeper look on this repository. For running `main.jl` file, a **makefile** is also included to the repository. By using the commands there, you can either run the project with a virtual environment by typing `make run-virtual` or you can directly run by entering `make run` command.
+
+**Note:** In order to use the `make` command, the operating system should be a linux based distro or macOS. To use this command on Windows 10, please install [**GNU Make**](https://www.gnu.org/software/make/).
+
+## Progress So Far
+
+* All image readings and augmentation processes are implemented for WIDERFACE dataset. Please check `BBTNet/utils/*.jl` and `BBTNet/datasets/WIDERFACE.jl` for the source code.
+
+* Dense and Convolutional Layers are implemented under `BBTNet/layers/core.jl` and a custom layer structure called **Conv2D_Block** is implemented under `BBTNet/layers/conv2d_block.jl`. Conv2D_Block struct stacks multiple convolutional layers that have different activation functions, kernel sizes, filter sizes, etc.. It will be useful in next steps.
+
+* A notebook called `progress.ipynb` and a source file named `main.jl` are created for summarizing the completed steps and providing a short guidance for the usage of the commands.
+
+* A makefile is created for running the project and setting up the repository.
+
+## What To Do Next
+
+* ResNet50 backbone must be implemented.
+
+* Upsampling part of the Feature Pyramid Network should be added.
+
+* A loss function and decision mechanisms for bounding boxes must be implemented.
+
+* ...
 
