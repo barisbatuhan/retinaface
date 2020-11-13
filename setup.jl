@@ -10,4 +10,4 @@ Pkg.add("CUDA")
 Pkg.add("Knet")
 Pkg.add("ImageView")
 Pkg.add("ImageDraw")
-
+Pkg.add("MAT")

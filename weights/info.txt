@@ -1,4 +1,5 @@
 ============================================================================================================
 After the full implementation, the links for the model weights will be shared in this text file:
 ============================================================================================================
-* 
+* ResNet50: https://www.vlfeat.org/matconvnet/models/imagenet-resnet-50-dag.mat
+--> Please download and put inside <knet_dir>/data/imagenet/

@@ -35,13 +35,13 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * Dense and Convolutional Layers are implemented under `BBTNet/layers/core.jl` and a custom layer structure called **Conv2D_Block** is implemented under `BBTNet/layers/conv2d_block.jl`. Conv2D_Block struct stacks multiple convolutional layers that have different activation functions, kernel sizes, filter sizes, etc.. It will be useful in next steps.
 
+* ResNet50 backbone is implemented.
+
 * A notebook called `progress.ipynb` and a source file named `main.jl` are created for summarizing the completed steps and providing a short guidance for the usage of the commands.
 
 * A makefile is created for running the project and setting up the repository.
 
 ## What To Do Next
-
-* ResNet50 backbone must be implemented.
 
 * Upsampling part of the Feature Pyramid Network should be added.
 

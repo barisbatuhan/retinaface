@@ -67,7 +67,7 @@ function Conv2D(
     pdrop=0, padding=0, stride=1, dilation=1, atype=Array{Float64}
     ) 
     return Conv2D(
-        Param(convert(atype, randn(w1, w2, input_dim, output_dim))),
+        Param(convert(atype, xavier(w1, w2, input_dim, output_dim))),
         Param(convert(atype, zeros(1, 1, output_dim, 1))),
         f, pdrop, padding, stride, dilation
         )
@@ -80,4 +80,30 @@ function (c::Conv2D)(x)
         padding=c.padding, 
         stride=c.stride, 
         dilation=c.dilation) .+ c.b)
+end
+
+"""
+Batch Normalization Layer
+- Taken from Knet > Examples > ResNet
+- works both for convolutional and fully connected layers
+- mode, 0=>train, 1=>test
+"""
+function batchnorm(w, x, ms; mode=1, epsilon=1e-5)
+    mu, sigma = nothing, nothing
+    if mode == 0
+        d = ndims(x) == 4 ? (1,2,4) : (2,)
+        s = prod(size(x,d...))
+        mu = sum(x,d) / s
+        x0 = x .- mu
+        x1 = x0 .* x0
+        sigma = sqrt(epsilon + (sum(x1, d)) / s)
+    elseif mode == 1
+        mu = popfirst!(ms)
+        sigma = popfirst!(ms)
+    end
+
+    # we need value in backpropagation
+    push!(ms, value(mu), value(sigma))
+    xhat = (x.-mu) ./ sigma
+    return w[1] .* xhat .+ w[2]
 end
