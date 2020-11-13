@@ -30,7 +30,7 @@ function (model::ResNet50)(x; mode=1)
     # layer 1
     conv1  = conv4(model.w[1], x; padding=3, stride=2) .+ model.w[2]
     bn1    = batchnorm(model.w[3:4],conv1, model.ms; mode=mode)
-    pool1  = pool(bn1; window=3, stride=2)
+    pool1  = pool(bn1; padding=1, window=3, stride=2)
 
     # layer 2,3,4,5
     r2 = _reslayerx5(model.w[5:34], pool1, model.ms; strides=[1,1,1,1], mode=mode)

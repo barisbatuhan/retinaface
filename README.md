@@ -37,15 +37,19 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * ResNet50 backbone is implemented.
 
+* Upsampling part of the Feature Pyramid Network is added.
+
 * A notebook called `progress.ipynb` and a source file named `main.jl` are created for summarizing the completed steps and providing a short guidance for the usage of the commands.
 
 * A makefile is created for running the project and setting up the repository.
 
 ## What To Do Next
 
-* Upsampling part of the Feature Pyramid Network should be added.
+* GPU support (especially for multiple GPUs).
 
 * A loss function and decision mechanisms for bounding boxes must be implemented.
+
+* Context-Module heads must be written.
 
 * ...
 
