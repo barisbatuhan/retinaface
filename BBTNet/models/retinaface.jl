@@ -1,32 +1,27 @@
 include("../backbones/resnet.jl")
+include("../backbones/fpn.jl")
+include("../backbones/ssh.jl")
 
-mutable struct RetinaFace
-    resnet50
-    atype
-    weights_file::String
+struct RetinaFace
+    backbone
+    fpn
+    head_module1
+    head_module2
 end
 
-function RetinaFace(atype=Array{Float64})
-    resnet50 = ResNet50(
-        include_top=false, 
-        atype=atype, 
-        return_intermediate=true)
-    return RetinaFace(resnet50, atype, "-")   
+function RetinaFace(;dtype=Array{Float64}) 
+    return RetinaFace(
+        ResNet50(include_top=false, dtype=dtype), 
+        FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype)
+    )   
 end
 
-# mode, 0=>train, 1=>test
-function (model::RetinaFace)(x, mode=1)
-    c2, c3, c4, c5 = model.resnet50(x)
-    p6 = conv4(convert(model.atype, xavier(3, 3, size(c5)[3], 256)), c5, stride=2, padding=1)
-    p5 = conv4(convert(model.atype, xavier(1, 1, size(c5)[3], 256)), c5)
-    p4 = _lateral_conn(model, c4, p5)
-    p3 = _lateral_conn(model, c3, p4)
-    p2 = _lateral_conn(model, c2, p3)
-    return p2, p3, p4, p5, p6
-end
-
-function _lateral_conn(model::RetinaFace, left, up)
-    up_sampled = unpool(up)
-    resized_left = conv4(convert(model.atype, xavier(1, 1, size(left)[3], 256)), left)
-    return up_sampled .+ resized_left
+function (model::RetinaFace)(x; train=true)
+    c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=false)
+    p_vals = model.fpn([c2, c3, c4, c5], train=train)
+    ssh_vals = []
+    for p in p_vals push!(ssh_vals, model.head_module1(p, train=train)) end
+    ssh_vals2 = []
+    for s in ssh_vals push!(ssh_vals2, model.head_module2(s, train=train)) end
+    return ssh_vals2
 end

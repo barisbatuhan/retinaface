@@ -1,113 +1,79 @@
+include("../core/layers.jl")
+include("../core/blocks.jl")
+
 """
-All of these structures are mostly taken from the GitHub repo:
-https://github.com/denizyuret/Knet.jl/blob/master/examples/resnet/resnet.jl
+Required ResNet structures are implemented there.
 """
 
-using Knet, ArgParse
+struct ResNet50 layer1; layer2; layer3; layer4; layer5; fc; end
 
-include("../layers/conv2d_block.jl")
-include(Knet.dir("data","imagenet.jl"))
+function ResNet50(;input_dim=3, dtype=Array{Float64}, pdrop=0, bias=false, include_top=true)
+    layer1 = _InitLayer(input_dim=input_dim, dtype=dtype, pdrop=pdrop, bias=bias)
+    layer2 = Chain([
+        Residual_1x3x1(64, [64, 64, 256], downsample=true, dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(256, [64, 64, 256], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(256, [64, 64, 256], dtype=dtype, pdrop=pdrop, bias=bias)
+    ])
+    layer3 = Chain([
+        Residual_1x3x1(256, [128, 128, 512], downsample=true, dtype=dtype, pdrop=pdrop, 
+                        ds_3x3_stride=2, bias=bias),
+        Residual_1x3x1(512, [128, 128, 512], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(512, [128, 128, 512], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(512, [128, 128, 512], dtype=dtype, pdrop=pdrop, bias=bias)
+    ])
+    layer4 = Chain([
+        Residual_1x3x1(512, [256, 256, 1024], downsample=true, dtype=dtype, pdrop=pdrop, 
+                        ds_3x3_stride=2, bias=bias),
+        Residual_1x3x1(1024, [256, 256, 1024], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(1024, [256, 256, 1024], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(1024, [256, 256, 1024], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(1024, [256, 256, 1024], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(1024, [256, 256, 1024], dtype=dtype, pdrop=pdrop, bias=bias)
+    ])
+    layer5 = Chain([
+        Residual_1x3x1(1024, [512, 512, 2048], downsample=true, dtype=dtype, pdrop=pdrop, 
+                        ds_3x3_stride=2, bias=bias),
+        Residual_1x3x1(2048, [512, 512, 2048], dtype=dtype, pdrop=pdrop, bias=bias),
+        Residual_1x3x1(2048, [512, 512, 2048], dtype=dtype, pdrop=pdrop, bias=bias),
+    ])
 
-struct ResNet50
-    w
-    ms
-    include_top::Bool
-    return_intermediate::Bool
+    fc = nothing
+    if include_top fc = Dense(2048, 1000) end
+
+    return ResNet50(layer1, layer2, layer3, layer4, layer5, fc)
 end
 
-function ResNet50(;
-    weight_path::String="imagenet-resnet-50-dag", 
-    atype=Array{Float64},
-    include_top::Bool=true,
-    return_intermediate::Bool=false)
-    model = matconvnet(weight_path)
-    w, ms = _get_params(model["params"], atype)
-    return ResNet50(w, ms, include_top, return_intermediate)
-end
-
-# mode, 0=>train, 1=>test
-function (model::ResNet50)(x; mode=1)
-    # layer 1
-    conv1  = conv4(model.w[1], x; padding=3, stride=2) .+ model.w[2]
-    bn1    = batchnorm(model.w[3:4],conv1, model.ms; mode=mode)
-    pool1  = pool(bn1; padding=1, window=3, stride=2)
-
-    # layer 2,3,4,5
-    r2 = _reslayerx5(model.w[5:34], pool1, model.ms; strides=[1,1,1,1], mode=mode)
-    r3 = _reslayerx5(model.w[35:73], r2, model.ms; mode=mode)
-    r4 = _reslayerx5(model.w[74:130], r3, model.ms; mode=mode) # 5
-    r5 = _reslayerx5(model.w[131:160], r4, model.ms; mode=mode)
-
-    # fully connected layer
-    if model.include_top
-        pool5  = pool(r5; stride=1, window=7, mode=2)
-        fc1000 = model.w[161] * mat(pool5) .+ model.w[162]
-        if model.return_intermediate
-            return r2, r3, r4, r5, fc1000
-        else
-            return fc1000
+function (rn::ResNet50)(x; train=true, return_intermediate=true)
+    c2 = rn.layer2(rn.layer1(x, train=true), train=true)
+    c3 = rn.layer3(c2, train=true)
+    c4 = rn.layer4(c3, train=true)
+    c5 = rn.layer5(c4, train=true)
+    if rn.fc === nothing
+        if return_intermediate return c2, c3, c4, c5, nothing
+        else return c5
         end
-    end
-    if model.return_intermediate
-        return r2, r3, r4, r5
     else
-        return r5
-    end
-end
-
-function _reslayerx0(w,x,ms; padding=0, stride=1, mode=1)
-    b  = conv4(w[1],x; padding=padding, stride=stride)
-    bx = batchnorm(w[2:3],b,ms; mode=mode)
-end
-
-function _reslayerx1(w,x,ms; padding=0, stride=1, mode=1)
-    relu.(_reslayerx0(w,x,ms; padding=padding, stride=stride, mode=mode))
-end
-
-function _reslayerx2(w,x,ms; pads=[0,1,0], strides=[1,1,1], mode=1)
-    ba = _reslayerx1(w[1:3],x,ms; padding=pads[1], stride=strides[1], mode=mode)
-    bb = _reslayerx1(w[4:6],ba,ms; padding=pads[2], stride=strides[2], mode=mode)
-    bc = _reslayerx0(w[7:9],bb,ms; padding=pads[3], stride=strides[3], mode=mode)
-end
-
-function _reslayerx3(w,x,ms; pads=[0,0,1,0], strides=[2,2,1,1], mode=1) # 12
-    a = _reslayerx0(w[1:3],x,ms; stride=strides[1], padding=pads[1], mode=mode)
-    b = _reslayerx2(w[4:12],x,ms; strides=strides[2:4], pads=pads[2:4], mode=mode)
-    relu.(a .+ b)
-end
-
-function _reslayerx4(w,x,ms; pads=[0,1,0], strides=[1,1,1], mode=1)
-    relu.(x .+ _reslayerx2(w,x,ms; pads=pads, strides=strides, mode=mode))
-end
-
-function _reslayerx5(w,x,ms; strides=[2,2,1,1], mode=1)
-    x = _reslayerx3(w[1:12],x,ms; strides=strides, mode=mode)
-    for k = 13:9:length(w)
-        x = _reslayerx4(w[k:k+8],x,ms; mode=mode)
-    end
-    return x
-end
-
-function _get_params(params, atype)
-    len = length(params["value"])
-    ws, ms = [], []
-    for k = 1:len
-        name = params["name"][k]
-        value = convert(Array{Float32}, params["value"][k])
-
-        if endswith(name, "moments")
-            push!(ms, reshape(value[:,1], (1,1,size(value,1),1)))
-            push!(ms, reshape(value[:,2], (1,1,size(value,1),1)))
-        elseif startswith(name, "bn")
-            push!(ws, reshape(value, (1,1,length(value),1)))
-        elseif startswith(name, "fc") && endswith(name, "filter")
-            push!(ws, transpose(reshape(value,(size(value,3),size(value,4)))))
-        elseif startswith(name, "conv") && endswith(name, "bias")
-            push!(ws, reshape(value, (1,1,length(value),1)))
-        else
-            push!(ws, value)
+        h, w, c, n = size(c5)
+        # assuming image is square shaped
+        p = pool(c5, window=h, mode=2)[1,1,:,:]
+        res = rn.fc(p, train=true)
+        if return_intermediate return c2, c3, c4, c5, res
+        else return res
         end
     end
-    map(wi->convert(atype, wi), ws),
-    map(mi->convert(atype, mi), ms)
+end
+
+
+struct _InitLayer conv_bn; end
+
+function _InitLayer(;input_dim=3, output_dim=64, dtype=Array{Float64}, pdrop=0, bias=false)
+    return _InitLayer(
+        ConvBn(7, 7, input_dim, output_dim, bias=bias, padding=3, 
+                stride=2, dtype=dtype, pdrop=pdrop)
+    )
+end
+
+function (il::_InitLayer)(x; train=true)
+    x_val = pool(relu.(il.conv_bn(x, train=train)), window=3, stride=2, padding=1)
+    return x_val
 end
