@@ -1,13 +1,14 @@
 using Random
 using Images, ImageView
 
+include("../../configs.jl")
 include("augment.jl")
 
 mutable struct Image_Reader
     augment::Bool
     pre_scales::Array{Float64}
     function Image_Reader(augment::Bool=false)
-        return new(augment, [0.3, 0.45, 0.6, 0.8, 1.0])
+        return new(augment, crop_ratios)
     end
 end
 
