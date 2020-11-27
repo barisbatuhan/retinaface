@@ -33,23 +33,25 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * All image readings and augmentation processes are implemented for WIDERFACE dataset. Please check `BBTNet/utils/*.jl` and `BBTNet/datasets/WIDERFACE.jl` for the source code.
 
-* Dense and Convolutional Layers are implemented under `BBTNet/layers/core.jl` and a custom layer structure called **Conv2D_Block** is implemented under `BBTNet/layers/conv2d_block.jl`. Conv2D_Block struct stacks multiple convolutional layers that have different activation functions, kernel sizes, filter sizes, etc.. It will be useful in next steps.
+* Batch Normalization, Convolution, Dense layers  are implemented under `BBTNet/core/layers.jl` and Residual, Conv+BatchNorm and other special blocks are added to `BBTNet/core/blocks.jl`. 
 
-* ResNet50 backbone is implemented.
+* The entire network is implemented, which consists of ResNet50 backbone, Feature Pyramid Network (upsampling), a Convolutional Structured Context Head Module (SSH based), 1x1 Convolutional Proposal Heads.
 
-* Upsampling part of the Feature Pyramid Network is added.
+*  For calculating the loss, intersection of union values for each ground truth box and proposed boxes should be calculated. This IOU calculation and helper methods are implemented.
 
 * A notebook called `progress.ipynb` and a source file named `main.jl` are created for summarizing the completed steps and providing a short guidance for the usage of the commands.
+
+* The prediction process is implemented completely. However, there are no pretrained weights so far. Therefore, the model makes random bounding box proposals.
 
 * A makefile is created for running the project and setting up the repository.
 
 ## What To Do Next
 
-* GPU support (especially for multiple GPUs).
+* The final loss function.
 
-* A loss function and decision mechanisms for bounding boxes must be implemented.
+* Loading pretrained weights from already existing python based repositories.
 
-* Context-Module heads must be written.
+* Multiple GPU support.
 
-* ...
+* Improvements on image reading and augmenting.
 
