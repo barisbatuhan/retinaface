@@ -118,7 +118,7 @@ function _get_priorboxes(;dtype=Array{Float64})
                 for w in 1:f
                     cx = (w - 0.5) * scaler
                     cy = (h - 0.5) * scaler
-                    anchors[counter,:] = convert(dtype, [cx, cy, bbox_len, bbox_len])
+                    anchors[counter,:] = convert(dtype, [cx cy bbox_len bbox_len])
                     counter += 1
                 end
             end

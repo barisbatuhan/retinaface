@@ -14,6 +14,7 @@ model = RetinaFace(dtype=atype)
 imgs_permuted = convert(atype, permutedims(imgs, (3,2,1,4)))
 c, b, l = model(imgs_permuted, train=false)
 
-# prints first image in the batch
-combined = cat(b[1], l[1], dims=2)
-draw_boxes_and_landmarks(imgs[:,:,:,1], combined)
+combined = permutedims(cat(b[1], l[1], dims=2), (2, 1))
+
+image = draw_boxes_and_landmarks(imgs[:,:,:,1], combined)
+imshow(image)

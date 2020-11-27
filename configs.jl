@@ -34,4 +34,4 @@ decay1          = 70
 decay2          = 9
 
 # Testing Parameters
-conf_level      = 0.8
+conf_level      = 0.99999
