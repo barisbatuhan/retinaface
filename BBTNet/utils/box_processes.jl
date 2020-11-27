@@ -6,19 +6,30 @@ The parts below are mostly adapted from:
 * https://github.com/Hakuyume/chainer-ssd
 """
 
+
+
 """ 
 Matches 2 boxes with each other. 
 As context_head input, place 1 for first head and 2 for second head
 """
 function match_boxes(boxes1, boxes2, context_head; dtype=Array{Float64})
-    B = size(bboxes2)[1]
-    class_fill = convert(dtype, zeros(B, 2))
-    bbox_fill = convert(dtype, zeros(B, 4))
-    landmark_fill = convert(dtype, zeros(B, 10))
+    N, B, _ = size(bboxes2)
+    class_fill = convert(dtype, zeros(N, B, 2))
+    bbox_fill = convert(dtype, zeros(N, B, 4))
+    landmark_fill = convert(dtype, zeros(N, B, 10))
+    pos_thr = head2_pos_iou; neg_thr = head2_neg_iou
+    if context_head == 1 
+        pos_thr = head1_pos_iou; neg_thr = head1_neg_iou
+    end
     # got intersection of union for each box combination
-    iou_vals = iou(boxes1, _to_min_max_form(boxes2))
-    max_vals, max_idx = findmax(iou_vals; dims=2)
-    # TODO: implement further
+    for n in 1:N
+        iou_vals = iou(boxes1[n,:,:], _to_min_max_form(boxes2[n,:,:]))
+        max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2)
+        max_gt_vals, max_gt_idx = findmax(iou_vals; dims=1)
+        
+
+    end
+    return class_fill, bbox_fill, landmark_fill
 end
 
 
@@ -47,10 +58,14 @@ end
 """
 Conversion from: 
 (center_x, center_y, width, height) --> (min_x, min_y, max_x, max_y)
+If the start of a box is negative or bigger than the image size, then 
+it is set to either 0 or image size.
 """
 function _to_min_max_form(boxes)
     half_lens = boxes[:,3:4] ./ 2
-    return cat(boxes[:,1:2] .- half_lens, boxes[:,1:2] .+ half_lens, dims=2)
+    return cat(
+        max.(boxes[:,1:2] .- half_lens, 0), 
+        min.(boxes[:,1:2] .+ half_lens, img_size), dims=2)
 end
 
 """
@@ -128,16 +143,20 @@ function decode_points(bboxes, landmarks; dtype=Array{Float64})
 end
 
 function _decode_bboxes(bbox, priors)
-    centers = priors[:, 1:2] .+ (bbox[:, :, 1:2] .* variances[1]) .* priors[:, 3:end]
-    lengths = priors[:, 3:end] .* exp.(bbox[:, :, 3:end] .* variances[2])
+    P = size(priors)[1]
+    print(typeof(bbox), typeof(priors), typeof(variances[1]))
+    centers = reshape(priors[:, 1:2], (1, P, 2)) .+ (bbox[:, :, 1:2] .* variances[1]) .* reshape(priors[:, 3:end], (1, P, 2))
+    lengths = reshape(priors[:, 3:end], (1, P, 2)) .* exp.(bbox[:, :, 3:end] .* variances[2])
+    centers .-= centers ./ 2
     return cat(centers, lengths, dims=3)
 end
 
 function _decode_landmarks(landmarks, priors)
-    lm1 = priors[:, 1:2] .+ landmarks[:, :, 1:2] .* variances[1] .* priors[:, 3:end]
-    lm2 = priors[:, 1:2] .+ landmarks[:, :, 3:4] .* variances[1] .* priors[:, 3:end]
-    lm3 = priors[:, 1:2] .+ landmarks[:, :, 5:6] .* variances[1] .* priors[:, 3:end]
-    lm4 = priors[:, 1:2] .+ landmarks[:, :, 7:8] .* variances[1] .* priors[:, 3:end]
-    lm5 = priors[:, 1:2] .+ landmarks[:, :, 9:10] .* variances[1] .* priors[:, 3:end]
+    P = size(priors)[1]
+    lm1 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 1:2] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm2 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 3:4] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm3 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 5:6] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm4 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 7:8] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm5 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 9:10] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
 end

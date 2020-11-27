@@ -1,6 +1,10 @@
+# Network codes
 include("../backbones/resnet.jl")
 include("../backbones/fpn.jl")
 include("../backbones/ssh.jl")
+# BBox Related Codes
+include("../utils/box_processes.jl")
+# Global Configuration Parameters
 include("../../configs.jl")
 
 """
@@ -63,7 +67,7 @@ function (model::RetinaFace)(x; train=true)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=false)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
-    
+    print("Passed backbone and FPN structures.\n")
     # context head results will be kept
     ssh_vals1 = []
     ssh_vals2 = []
@@ -81,10 +85,34 @@ function (model::RetinaFace)(x; train=true)
     end
     # 2nd context head module
     for s in ssh_vals1 push!(ssh_vals2, model.head_module2(s, train=train)) end
-    class_vals2 = model.class_conv2(p_vals)
-    bbox_vals2 = model.bbox_conv2(p_vals)
-    landmark_vals2 = model.landmark_conv2(p_vals)
-    # TODO: calculate loss
-    
+    class_vals2 = convert(Array{Float32}, model.class_conv2(p_vals))
+    bbox_vals2 = convert(Array{Float32}, model.bbox_conv2(p_vals))
+    landmark_vals2 = convert(Array{Float32}, model.landmark_conv2(p_vals))
+    print("Passed Context Head structures.\n")
+
+    if train == false
+        bboxes_decoded = []; landmarks_decoded = []
+        bboxes_decoded, landmarks_decoded = decode_points(bbox_vals2, landmark_vals2)
+        print("Predicted points are decoded.\n")
+        indices = findall(class_vals2[:,:,1] .>= conf_level)
+        N = size(class_vals2)[1]
+        boxes = []
+        for n in 1:N push!(boxes, []) end
+        for idx in indices push!(boxes[idx[1]], idx[2]) end
+
+        cl_results = []
+        bbox_results = []
+        landmark_results = []
+        for n in 1:N
+            push!(cl_results, class_vals2[n, boxes[n], :])
+            push!(bbox_results, bboxes_decoded[n, boxes[n], :])
+            push!(landmark_results, landmarks_decoded[n, boxes[n], :])
+        end
+
+        print("Returning prediction results above confidence level: ", conf_level, ".\n")
+        return  cl_results, bbox_results, landmark_results 
+    end
+
+    # TODO: Calculate the total loss and backpropagate
     return class_vals2, bbox_vals2, landmark_vals2
 end

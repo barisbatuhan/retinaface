@@ -32,3 +32,6 @@ batch_size      = 24
 epoch           = 100
 decay1          = 70
 decay2          = 9
+
+# Testing Parameters
+conf_level      = 0.8

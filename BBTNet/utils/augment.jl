@@ -73,7 +73,7 @@ function squaritize_img(img, bboxes)
         # complete the length for an odd difference size
         if mod(diff, 2) == 1 pads[1] += 1 end
         if minlen == w
-            full_img[:,pads[1]+1:maxlen-pads[2]] = img
+            full_img[:,:,pads[1]+1:maxlen-pads[2]] = img
             bboxes[1:2:13,:] .+= pads[1]
             bboxes[1,:] .+= pads[1]
         else
