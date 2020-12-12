@@ -3,6 +3,7 @@ import Base: length, size, iterate, eltype, IteratorSize, IteratorEltype, haslen
 import .Iterators: cycle, Cycle, take
 
 include("../utils/ImageReader.jl")
+include("../../configs.jl")
 
 mutable struct WIDER_Data
     dir::String
@@ -14,8 +15,9 @@ mutable struct WIDER_Data
     shuffle::Bool
     augment::Bool
     curr_idx::Int64
+    dtype
     
-    function WIDER_Data(dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true)
+    function WIDER_Data(dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true, dtype=Array{Float32})
         files = []
         bbox_dict = Dict()
         num_faces = 0
@@ -39,7 +41,7 @@ mutable struct WIDER_Data
             bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
-        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1)
+        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, dtype)
     end
 end
 
@@ -67,22 +69,23 @@ end
 
 function iterate(data::WIDER_Data, state=ifelse(
     data.shuffle, randperm(data.num_files), collect(1:data.num_files)))
-    Random.seed!(42)
+    
     r = Image_Reader(data.augment)
     if length(state) < data.batch_size || state === nothing
         return nothing
     else 
         imgs = data.files[state[1:data.batch_size]]
-        imgs_arr = zeros(3, 640, 640, data.batch_size)
+        imgs_arr = zeros(3, img_size, img_size, data.batch_size)
         labels = []
         idx = 1
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
-            img, box = read_img(r, img_dir, data.bboxes[img_path], 640)
-            push!(labels, box)
+            img, box = read_img(r, img_dir, data.bboxes[img_path], img_size)
+            push!(labels, convert(data.dtype, box))
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end
+        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
         return (imgs_arr, labels), state[data.batch_size+1:end]
     end
 end

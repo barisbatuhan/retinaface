@@ -31,5 +31,5 @@ function (fpn::FPN)(xs; train=true)
     p4 = fpn.merge4(p4, train=train)
     p3 = fpn.merge3(p3, train=train)
     p2 = fpn.merge2(p2, train=train)
-    return p2, p3, p4, p5, p6
+    return [p2, p3, p4, p5, p6]
 end

@@ -39,7 +39,7 @@ end
 Residual Layer structure with kernel sizes 1x1, 3x3, 1x1 in order. Used mostly in ResNet
 Network with more than 50 layers.
 """
-struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv3; bn3; end
+mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv3; bn3; end
 
 function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1,
                         bias=false, momentum=0.1, pdrop=0, dtype=Array{Float64})
@@ -64,8 +64,8 @@ function (r::Residual_1x3x1)(x; train=true)
     x_val = r.conv_bn1(x, train=train)
     x_val = r.conv_bn2(x_val, train=train)
     x_val = r.conv3(x_val, train=train)
-    if r.downsample === nothing x_val .+= x
-    else x_val .+= r.downsample(x, train=train)
+    if r.downsample === nothing x_val += x
+    else x_val += r.downsample(x, train=train)
     end
     x_val = relu.(r.bn3(x_val))
     return x_val
@@ -74,6 +74,6 @@ end
 """
 To add layers on top of each other.
 """
-struct Chain; layers; end
+mutable struct Chain; layers; end
 (c::Chain)(x; train=true) = (for l in c.layers; x = l(x, train=train); end; x)
 

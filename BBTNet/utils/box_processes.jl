@@ -1,37 +1,56 @@
 include("../../configs.jl")
 
+function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array{Float32})
+    priors = _get_priorboxes(dtype=dtype)
+    decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors) * img_size
+    decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end])  
+    iou_vals = iou(gt[:,1:4], _to_min_max_form(bboxes), dtype=dtype) 
+    
+    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2) # gets max values and indices for each gt
+    max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) # gets max values and indices for each prior
+    
+    pos_indices = getindex.(max_gt_idx[findall(max_gt_vals .>= pos_thold)], [1 2])[:, 2]
+    num_pos_boxes = length(pos_indices)
+    if num_pos_boxes == 0 
+        # if no positive anchor boxes are found, then no loss will be calculated
+        return nothing, nothing, nothing
+    end 
+    
+    neg_indices = max_prior_idx[findall(max_prior_vals .<= neg_thold)]
+    if size(neg_indices)[1] > (ohem_ratio * num_pos_boxes)
+        # select the most negative ohem_ratio * num_pos_boxes many boxes
+        print(size(max_prior_vals))
+        neg_indices = getindex.(max_prior_idx[sortperm(max_prior_vals)[1:ohem_ratio * num_pos_boxes]], [1 2])[:, 1]
+    else
+        neg_indices = getindex.(neg_indices, [1 2])[:, 1]
+    end
+     
+    """
+    Below, encoding of the initial ground truth labels will be made. In the paper the process is summarized as:
+    Box_lengths     = log(gt_w / scale) + log(gt_h / scale)
+    Point_coords    = [(bbox_x1 - anchor_center_x) / scale] + [(bbox_x2 - anchor_center_x) / scale] # bbox x-coord loss
+                    + [(bbox_y1 - anchor_center_y) / scale] + [(bbox_y2 - anchor_center_y) / scale] # bbox y-coord loss
+                    + for each landmark {[(landmark_x - anchor_center_x) / scale] + [(landmark_y - anchor_center_y) / scale]}
+    
+    Here, the scale is actually the width and height of the prior anchor box.
+    """
+  
+    selected_priors = priors[pos_indices,:]
+    # gt bbox conversion
+    gt ./= img_size
+    gt[:,1:4] = _to_center_length_form(gt[:,1:4])
+    gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
+    gt[:,1:2] = (gt[:,1:2] - selected_priors[:, 1:2]) / selected_priors[:, 3:4]
+    gt[:,5:14] = (gt[:,5:14] - selected_priors[:, 1:2]) / selected_priors[:, 3:4]
+
+    return gt, pos_indices, neg_indices
+end
+
 """
 The parts below are mostly adapted from:
 * https://github.com/biubug6/Pytorch_Retinaface
 * https://github.com/Hakuyume/chainer-ssd
 """
-
-
-
-""" 
-Matches 2 boxes with each other. 
-As context_head input, place 1 for first head and 2 for second head
-"""
-function match_boxes(boxes1, boxes2, context_head; dtype=Array{Float64})
-    N, B, _ = size(bboxes2)
-    class_fill = convert(dtype, zeros(N, B, 2))
-    bbox_fill = convert(dtype, zeros(N, B, 4))
-    landmark_fill = convert(dtype, zeros(N, B, 10))
-    pos_thr = head2_pos_iou; neg_thr = head2_neg_iou
-    if context_head == 1 
-        pos_thr = head1_pos_iou; neg_thr = head1_neg_iou
-    end
-    # got intersection of union for each box combination
-    for n in 1:N
-        iou_vals = iou(boxes1[n,:,:], _to_min_max_form(boxes2[n,:,:]))
-        max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2)
-        max_gt_vals, max_gt_idx = findmax(iou_vals; dims=1)
-        
-
-    end
-    return class_fill, bbox_fill, landmark_fill
-end
-
 
 """
 !!! Each individual box in boxes has the format (x_min, y_min, x_max, y_max) !!!
@@ -41,17 +60,32 @@ B   : number of boxes in boxes2
 
 Return: iou values with shape (A, B)
 """
-function iou(boxes1, boxes2)
+function iou(boxes1, boxes2; dtype=Array{Float32})
     A, C = size(boxes1); B, D = size(boxes2)
+    
+    # if run_gpu
+    #     # KnetArray does not support repeat method, thus, CuArray used here.
+    #     boxes1 = CuArray(boxes1)
+    #     boxes2 = CuArray(boxes2)
+    # end
+    
     intersections = _get_intersections(boxes1, boxes2)
     
     area1 = (boxes1[:,4] .- boxes1[:,2]) .* (boxes1[:,3] .- boxes1[:,1])
     area2 = (boxes2[:,4] .- boxes2[:,2]) .* (boxes2[:,3] .- boxes2[:,1])
 
     area1 = repeat(reshape(area1, (A, 1)), outer=(1, B))
-    area2 = repeat(reshape(area1, (1, B)), outer=(A, 1))
+    area2 = repeat(reshape(area2, (1, B)), outer=(A, 1))
+    
+    # if run_gpu
+    #     boxes1 = convert(dtype, boxes1)
+    #     boxes2 = convert(dtype, boxes2)
+    #     intersections = convert(dtype, intersections)
+    #     area1 = convert(dtype, area1)
+    #     area2 = convert(dtype, area2)
+    # end
+    
     unions = area1 .+ area2 .- intersections
-
     return intersections ./ unions
 end
 
@@ -89,6 +123,7 @@ Return: intersection area with shape (A, B)
 function _get_intersections(boxes1, boxes2)
     A, C = size(boxes1)
     B, D = size(boxes2)
+    
     b1_mins = repeat(reshape(boxes1[:, 1:2], (A, 1, 2)), outer=(1, B, 1))
     b2_mins = repeat(reshape(boxes2[:, 1:2], (1, B, 2)), outer=(A, 1, 1))
     min_coords = min.(b1_mins, b2_mins)
@@ -144,19 +179,18 @@ end
 
 function _decode_bboxes(bbox, priors)
     P = size(priors)[1]
-    print(typeof(bbox), typeof(priors), typeof(variances[1]))
-    centers = reshape(priors[:, 1:2], (1, P, 2)) .+ (bbox[:, :, 1:2] .* variances[1]) .* reshape(priors[:, 3:end], (1, P, 2))
-    lengths = reshape(priors[:, 3:end], (1, P, 2)) .* exp.(bbox[:, :, 3:end] .* variances[2])
+    centers = reshape(priors[:, 1:2], (1, P, 2)) + bbox[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
+    lengths = exp.(reshape(priors[:, 3:end], (1, P, 2)) .* bbox[:, :, 3:end])
     centers .-= centers ./ 2
     return cat(centers, lengths, dims=3)
 end
 
 function _decode_landmarks(landmarks, priors)
     P = size(priors)[1]
-    lm1 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 1:2] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm2 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 3:4] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm3 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 5:6] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm4 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 7:8] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm5 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 9:10] .* variances[1] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm1 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm2 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 3:4] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm3 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 5:6] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm4 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 7:8] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm5 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 9:10] .* reshape(priors[:, 3:end], (1, P, 2))
     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
 end

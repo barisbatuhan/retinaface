@@ -1,3 +1,5 @@
+using Knet
+
 """
 Global hyper parameters are defined here for simplicity in
 changing their values.
@@ -15,7 +17,6 @@ anchor_info     = [
     Dict([("stride", 32), ("anchors", [128, 161.26, 203.19])]),
     Dict([("stride", 64), ("anchors", [256, 322.54, 406.37])])
 ]
-variances       = [0.1, 0.2]
 
 # Loss Calculation Metrics
 scale           = 2^(1/3)
@@ -35,3 +36,7 @@ decay2          = 9
 
 # Testing Parameters
 conf_level      = 0.99999
+
+# Device Parameters
+run_gpu = false
+atype = run_gpu ? KnetArray{Float32} : Array{Float32}

@@ -3,8 +3,14 @@
 setup:
 	julia setup.jl
 
-run-virtual:
-	julia --project=./venv/Project.toml main.jl
+predict-virtual:
+	julia --project=./venv/Project.toml predict.jl
 
-run:
-	julia main.jl
+predict:
+	julia predict.jl
+
+train-virtual:
+	julia --project=./venv/Project.toml train.jl
+
+train:
+	julia train.jl

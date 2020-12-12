@@ -7,7 +7,7 @@ A classic fully connected layer.
     f   : activation function
     p   : dropout ratio
 """
-struct Dense w; b; f; p; end
+mutable struct Dense w; b; f; p; end
 
 """
 A custom constructor for Dense
@@ -44,7 +44,7 @@ A convolutional layer with 2D kernel dimensions.
     f   : activation function
     p   : dropout ratio
 """
-struct Conv2D w; b; f; p; padding; stride; dilation; end
+mutable struct Conv2D w; b; f; p; padding; stride; dilation; end
 
 """
 A custom constructor for Conv2D
@@ -73,18 +73,17 @@ end
 
 # Conv2D Layer Forward Pass
 function (c::Conv2D)(x; train=true)
-    x_val = deepcopy(x)
     # apply dropout only in training
     if train
-        x_val = dropout(x_val, c.p)
-        x_val = conv4(c.w, x_val, padding=c.padding, stride=c.stride, dilation=c.dilation) 
-        if c.b !== nothing x_val .+= c.b end
+        x = dropout(x, c.p)
+        x = conv4(c.w, x, padding=c.padding, stride=c.stride, dilation=c.dilation) 
+        if c.b !== nothing x .+= c.b end
     else
-        x_val = conv4(value(c.w), x_val, padding=c.padding, stride=c.stride, dilation=c.dilation) 
-        if c.b !== nothing x_val .+= value(c.b) end
+        x = conv4(value(c.w), x, padding=c.padding, stride=c.stride, dilation=c.dilation) 
+        if c.b !== nothing x .+= value(c.b) end
     end
-    if c.f === nothing return x_val
-    else return c.f.(x_val)
+    if c.f === nothing return x
+    else return c.f.(x)
     end
 end
 
@@ -92,7 +91,7 @@ end
 Batch Normalization Layer
 - works both for convolutional and fully connected layers
 """
-struct BatchNorm bn_params; end
+mutable struct BatchNorm bn_params; end
 
 function BatchNorm(;momentum=0.1) 
     return BatchNorm(bnmoments(momentum=momentum))
