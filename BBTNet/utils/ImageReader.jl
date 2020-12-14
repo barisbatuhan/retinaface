@@ -42,8 +42,6 @@ function read_img(r::Image_Reader, dir, new_boxes, len)
             push!(diff_indices, val)
         end
     end
-
-    print("Common sizes: ", size(common_indices, 1), '\n')
     
     new_boxes = new_boxes[:,common_indices]  
     return img, new_boxes

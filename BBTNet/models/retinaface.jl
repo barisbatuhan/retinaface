@@ -67,8 +67,8 @@ function RetinaFace(;dtype=Array{Float64})
     )   
 end
 
-# mode 1 means first context head and 2 means second context head
-function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
+# mode 1 means first context head, 2 means second context head, 0 means no context head
+function (model::RetinaFace)(x, y=nothing; mode=0, train=true)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
@@ -87,8 +87,10 @@ function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
     
     else
         # 2nd context head module
-        for idx in 1:size(p_vals)[1]
-            p_vals[idx] = model.head_module2(p_vals[idx], train=train)
+        if mode == 2
+            for idx in 1:size(p_vals)[1]
+                p_vals[idx] = model.head_module2(p_vals[idx], train=train)
+            end
         end
         class_vals = model.class_conv2(p_vals, train=train)
         bbox_vals = model.bbox_conv2(p_vals, train=train)
@@ -121,32 +123,32 @@ function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
         return  cl_results, bbox_results, landmark_results 
     else
         # for training, loss will be calculated and returned
-        N = size(class_vals)[1]
+        affected_loss = 0
         loss_val = 0
-        pos_thold = mode == 2 ? head2_pos_iou : head1_pos_iou
-        neg_thold = mode == 2 ? head2_neg_iou : head1_neg_iou
-
-        for n in 1:N
+        pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
+        neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
+        
+        for n in 1:size(class_vals, 1)
             # loop for each input in batch, since all inputs may have different number of boxes
-            bboxes = Array(value(bbox_vals))[n,1:end,1:end]
             if isempty(y[n]) continue end
             
+            bboxes = Array(value(bbox_vals))[n,1:end,1:end]
             gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)
-            if gt === nothing || isempty(gt) 
-                continue 
-            end 
-            gt = convert(model.dtype, gt)      
-            class_vals = softmax(class_vals, dims=2)
+            if (gt === nothing || isempty(gt)) continue end 
+            gt = convert(model.dtype, gt)
+            
             # Positive Losses
-            print(size(gt), size(bbox_vals), '\n')
             loss_val += smooth_l1(gt[:,1:4], bbox_vals[n,pos_indices,1:4])  # bounding box loss
-            loss_val += smooth_l1(gt[:,5:14], landmark_vals[n,pos_indices,:]) # landmark loss
-            loss_val += bce(class_vals[n,pos_indices,:], convert(model.dtype, ones(length(pos_indices))))
+            loss_val += smooth_l1(gt[:,5:14], landmark_vals[n,pos_indices,:]) # landmark loss           
+            loss_val += nll(permutedims(class_vals[n,pos_indices,:], (2, 1)), fill(1, (length(pos_indices),)))
             # Negative Losses
-            loss_val += bce(class_vals[n,neg_indices,:], convert(model.dtype, zeros(length(neg_indices))))
+            loss_val += nll(permutedims(class_vals[n,neg_indices,:], (2, 1)), fill(2, (length(neg_indices),)))
+            affected_loss += 1
         end
-        loss_val /= N
-        print("Loss Calculated: ", loss_val, "\n")
+        if loss_val > 0
+            loss_val /= affected_loss
+            print("Loss Calculated: ", loss_val, "\n")
+        end
         return loss_val
     end
 end

@@ -11,3 +11,6 @@ weights/*.mat
 venv
 venv/*
 
+# Cluster Files
+*.sh
+*.log

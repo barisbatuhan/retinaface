@@ -39,9 +39,6 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     gt ./= img_size
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
-    
-    print("\n", size(gt), size(selected_priors), "\n\n")
-    
     gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,5:6] = (gt[:,5:6] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,7:8] = (gt[:,7:8] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
