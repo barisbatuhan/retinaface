@@ -4,6 +4,13 @@ using Knet
 Global hyper parameters are defined here for simplicity in
 changing their values.
 """
+# Image and Data Paths
+wf_path = "/datasets/widerface/WIDER_"
+wf_labels_path = "/datasets/widerface/retinaface/"
+fddb_path = "/datasets/fddb/"
+aflw_path = "/datasets/aflw/"
+
+
 # Image Crop Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
@@ -38,5 +45,5 @@ decay2          = 9
 conf_level      = 0.99999
 
 # Device Parameters
-run_gpu = false
+run_gpu = true
 atype = run_gpu ? KnetArray{Float32} : Array{Float32}

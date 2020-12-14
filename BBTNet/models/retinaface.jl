@@ -72,7 +72,7 @@ function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
-    print("Passed backbone and FPN structures.\n")
+    # print("Passed backbone and FPN structures.\n")
     
     class_vals = nothing; bbox_vals = nothing; landmark_vals = nothing; 
     if mode == 1
@@ -94,7 +94,7 @@ function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
         bbox_vals = model.bbox_conv2(p_vals, train=train)
         landmark_vals = model.landmark_conv2(p_vals, train=train)
     end
-    print("Passed Context Head structures.\n")
+    # print("Passed Context Head structures.\n")
 
     if y === nothing && train == false
         # returning direct values for evaluation
@@ -129,21 +129,24 @@ function (model::RetinaFace)(x, y=nothing; mode=2, train=true)
         for n in 1:N
             # loop for each input in batch, since all inputs may have different number of boxes
             bboxes = Array(value(bbox_vals))[n,1:end,1:end]
-            print(size(y[n]),'\n')
-            gt, pos_indices, neg_indices = encode_gt_and_get_indices(Array(permutedims(y[n],(2, 1))), bboxes, pos_thold, neg_thold)
-            if gt === nothing continue end 
-            gt = convert(model.dtype, gt)
-            pos_indices = convert(model.dtype, pos_indices)
-            neg_indices = convert(model.dtype, neg_indices)         
+            if isempty(y[n]) continue end
+            
+            gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)
+            if gt === nothing || isempty(gt) 
+                continue 
+            end 
+            gt = convert(model.dtype, gt)      
             class_vals = softmax(class_vals, dims=2)
             # Positive Losses
+            print(size(gt), size(bbox_vals), '\n')
             loss_val += smooth_l1(gt[:,1:4], bbox_vals[n,pos_indices,1:4])  # bounding box loss
-            # loss_val += @diff smooth_l1(gt[:,5:14], landmark_vals[n,pos_indices,:]) # landmark loss
+            loss_val += smooth_l1(gt[:,5:14], landmark_vals[n,pos_indices,:]) # landmark loss
             loss_val += bce(class_vals[n,pos_indices,:], convert(model.dtype, ones(length(pos_indices))))
             # Negative Losses
             loss_val += bce(class_vals[n,neg_indices,:], convert(model.dtype, zeros(length(neg_indices))))
         end
         loss_val /= N
+        print("Loss Calculated: ", loss_val, "\n")
         return loss_val
     end
 end

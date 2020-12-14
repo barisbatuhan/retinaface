@@ -19,8 +19,7 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     neg_indices = max_prior_idx[findall(max_prior_vals .<= neg_thold)]
     if size(neg_indices)[1] > (ohem_ratio * num_pos_boxes)
         # select the most negative ohem_ratio * num_pos_boxes many boxes
-        print(size(max_prior_vals))
-        neg_indices = getindex.(max_prior_idx[sortperm(max_prior_vals)[1:ohem_ratio * num_pos_boxes]], [1 2])[:, 1]
+        neg_indices = getindex.(max_prior_idx[sortperm(vec(max_prior_vals))[1:ohem_ratio * num_pos_boxes]], [1 2])[:, 1]
     else
         neg_indices = getindex.(neg_indices, [1 2])[:, 1]
     end
@@ -40,8 +39,15 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     gt ./= img_size
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
-    gt[:,1:2] = (gt[:,1:2] - selected_priors[:, 1:2]) / selected_priors[:, 3:4]
-    gt[:,5:14] = (gt[:,5:14] - selected_priors[:, 1:2]) / selected_priors[:, 3:4]
+    
+    print("\n", size(gt), size(selected_priors), "\n\n")
+    
+    gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
+    gt[:,5:6] = (gt[:,5:6] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
+    gt[:,7:8] = (gt[:,7:8] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
+    gt[:,9:10] = (gt[:,9:10] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
+    gt[:,11:12] = (gt[:,11:12] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
+    gt[:,13:14] = (gt[:,13:14] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
 
     return gt, pos_indices, neg_indices
 end

@@ -17,11 +17,11 @@ mutable struct WIDER_Data
     curr_idx::Int64
     dtype
     
-    function WIDER_Data(dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true, dtype=Array{Float32})
+    function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true, dtype=Array{Float32})
         files = []
         bbox_dict = Dict()
         num_faces = 0
-        open(dir * "label.txt", "r") do io
+        open(label_dir * "label.txt", "r") do io
             lines = readlines(io)
             filename = nothing
             for line in lines
@@ -34,6 +34,8 @@ mutable struct WIDER_Data
                     bbox_dict[filename] = []
                 else
                     bbox = [parse(Float64, x) for x in split(line, " ")]
+                    bbox[3] += bbox[1]
+                    bbox[4] += bbox[2]
                     num_faces += 1
                     push!(bbox_dict[filename], bbox)
                 end
@@ -58,10 +60,13 @@ function _clean_bboxes(bboxes)
             i = iter - z_coords
             annotations[i,person] =  bboxes[person][iter]
         end
-        if annotations[5,person] < 0 # no landmark info
-            annotations[15,person] = -1.0
-        else
+        if all(>=(0), annotations[5:14,person]) 
             annotations[15,person] = 1.0
+            else # no landmark info
+            annotations[15,person] = -1.0
+        end
+        if !all(>=(0), annotations[1:4,person]) 
+            annotations[1,person] = -1.0
         end
     end
     return annotations
@@ -81,7 +86,7 @@ function iterate(data::WIDER_Data, state=ifelse(
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
             img, box = read_img(r, img_dir, data.bboxes[img_path], img_size)
-            push!(labels, convert(data.dtype, box))
+            push!(labels, box)
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end

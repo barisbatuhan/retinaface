@@ -15,9 +15,9 @@ function draw_boxes_and_landmarks(img, boxes)
         if any(x->x >= 0, boxes[1:4, person])
             to_draw = draw!(to_draw, Polygon([
                         (rect[1, 1], rect[2, 1]),
-                        (rect[1, 1] + rect[3, 1], rect[2, 1]),
-                        (rect[1, 1] + rect[3, 1], rect[2, 1] + rect[4, 1]),
-                        (rect[1, 1], rect[2, 1] + rect[4, 1])]), colors[1])
+                        (rect[3, 1], rect[2, 1]),
+                        (rect[3, 1], rect[4, 1]),
+                        (rect[1, 1], rect[4, 1])]), colors[1])
         end
         colorid = 2
         for lm in 5:2:14

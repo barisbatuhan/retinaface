@@ -2,9 +2,7 @@ include("BBTNet/models/retinaface.jl")
 include("BBTNet/datasets/WIDERFACE.jl")
 include("configs.jl")
 
-images_folder_dir = "../Datasets/WIDERFACE/WIDER_"
-
-val_data = WIDER_Data(images_folder_dir * "val/", train=false, batch_size=2, dtype=atype)
+data = WIDER_Data(wf_path * "val/", wf_labels_path * "val/", train=true, batch_size=1, dtype=atype)
 (imgs, boxes), state = iterate(val_data)
 print("Got the first batch: ", size(imgs), "\n")
 

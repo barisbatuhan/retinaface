@@ -2,10 +2,11 @@ include("BBTNet/models/retinaface.jl")
 include("BBTNet/datasets/WIDERFACE.jl")
 include("configs.jl")
 
+import Random
 
-images_folder_dir = "../Datasets/WIDERFACE/WIDER_"
+Random.seed!(42)
 
-data = WIDER_Data(images_folder_dir * "train/", train=true, batch_size=1, dtype=atype)
+data = WIDER_Data(wf_path * "train/", wf_labels_path * "train/", train=true, batch_size=1, dtype=atype)
 
 model = RetinaFace(dtype=atype)
 train_model(model, data)
