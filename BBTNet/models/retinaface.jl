@@ -1,3 +1,5 @@
+using ProgressBars, Printf
+
 # Network codes
 include("../backbones/resnet.jl")
 include("../backbones/fpn.jl")
@@ -68,11 +70,11 @@ function RetinaFace(;dtype=Array{Float64})
 end
 
 # mode 1 means first context head, 2 means second context head, 0 means no context head
-function (model::RetinaFace)(x, y=nothing; mode=0, train=true)
+function (model::RetinaFace)(x, y=nothing; mode=0, train=true, weight_decay=0)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
-    # print("Passed backbone and FPN structures.\n")
+    # print("Passed backbone and FPN structures.\n")  
     
     class_vals = nothing; bbox_vals = nothing; landmark_vals = nothing; 
     if mode == 1
@@ -128,65 +130,87 @@ function (model::RetinaFace)(x, y=nothing; mode=0, train=true)
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
+        N = size(class_vals, 1)
+        batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
+        batch_cls = convert(Array{Int64}, ones(N, size(class_vals, 2)))
+        
         for n in 1:size(class_vals, 1)
             # loop for each input in batch, since all inputs may have different number of boxes
-            if isempty(y[n]) continue end
+            if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
+                continue 
+            end 
             
-            bboxes = Array(value(bbox_vals))[n,1:end,1:end]
+            bboxes = Array(value(bbox_vals[n,:,:]))
             gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)
-            if (gt === nothing || isempty(gt)) continue end 
-            gt = convert(model.dtype, gt)
+            if pos_indices === nothing 
+                continue 
+            end 
             
-            # Positive Losses
-            loss_val += smooth_l1(gt[:,1:4], bbox_vals[n,pos_indices,1:4])  # bounding box loss
-            loss_val += smooth_l1(gt[:,5:14], landmark_vals[n,pos_indices,:]) # landmark loss           
-            loss_val += nll(permutedims(class_vals[n,pos_indices,:], (2, 1)), fill(1, (length(pos_indices),)))
-            # Negative Losses
-            loss_val += nll(permutedims(class_vals[n,neg_indices,:], (2, 1)), fill(2, (length(neg_indices),)))
+            gt = convert(model.dtype, gt)
+            batch_gt[n,pos_indices,:] = gt[:,1:14] 
+            batch_cls[n, pos_indices] .= 1
+            batch_cls[n, neg_indices] .= 2
             affected_loss += 1
         end
+        if affected_loss > 0 
+            class_vals = reshape(class_vals, (size(class_vals, 3), prod(size(class_vals)[1:2])))
+            batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
+            loss_val += nll(class_vals, batch_cls)
+#             print("After nll: ", loss_val, "\n")
+        end
+        loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals))
+#         print("After bbox: ", loss_val, "\n")
+        loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals))
+#         print("After lm: ", loss_val, "\n")
+        
         if loss_val > 0
             loss_val /= affected_loss
-            print("Loss Calculated: ", loss_val, "\n")
+            if weight_decay > 0
+                for p in params(model)
+                    # weight decay process
+                    loss_val -= weight_decay * sum(p.^2)
+                end
+            end
         end
+        print("\nFinal loss: ", loss_val, '\n')
         return loss_val
     end
 end
 
 function train_model(model::RetinaFace, data_reader; val_data=nothing)
-    lr = [1e-3, 1e-2, 1e-3, 1e-4]
-    lr_change_epochs = [5, 55, 68]
+    print("\n============================== TRAINING PROCESS ==============================\n\n")
     # momentum=0.9; weight_decay = 0.0005
     num_epochs = 80
     loss_history = []
 
     for e in 1:num_epochs
-        iter_no = 1
         (imgs, boxes), state = iterate(data_reader)
-        # imgs = convert(model.dtype, permutedims(imgs, (3,2,1,4)))
-        # boxes = convert(model.dtype, boxes)
-        while state !== nothing
-            if e < lr_change_epochs[1]
-                momentum!(model, [(imgs, boxes)], lr=lr[1], gamma=0.9)
-            elseif e < lr_change_epochs[2]
-                momentum!(model, [(imgs, boxes)], lr=lr[2], gamma=0.9)
-            elseif e < lr_change_epochs[3]
-                momentum!(model, [(imgs, boxes)], lr=lr[3], gamma=0.9)
+        iter_no = 1
+        total_batches = size(state, 1) + size(imgs)[end]
+        curr_batch = ProgressBar(1:total_batches, width =100)
+        last_loss = 0
+        while state !== nothing 
+            set_description(curr_batch, string(@sprintf("Epoch: %d", e)))
+            set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
+            if e < 5
+                momentum!(model, [(imgs, boxes)], lr=1e-3, gamma=0.9)
+            elseif e < 55
+                momentum!(model, [(imgs, boxes)], lr=1e-2, gamma=0.9)
+            elseif e < 68
+                momentum!(model, [(imgs, boxes)], lr=1e-3, gamma=0.9)
             else
-                momentum!(model, [(imgs, boxes)], lr=lr[4], gamma=0.9)
+                momentum!(model, [(imgs, boxes)], lr=1e-4, gamma=0.9)
             end
             if mod(iter_no, 20) == 0 
-                loss_val = model(imgs, boxes, train=false)
-                print("In epoch: ", e, " & Iter: ", iter_no, "--> Loss: ", loss_val,"\n")
+                last_loss = model(imgs, boxes, train=false)
             end
             (imgs, boxes), state = iterate(data_reader, state)
-            # imgs = convert(model.dtype, permutedims(imgs, (3,2,1,4)))
-            # boxes = convert(model.dtype, boxes)
+            iterate(curr_batch, size(imgs)[end])
             iter_no += 1
         end
         # Evaluate both training and val data after each epoch.
         train_loss = evaluate_model(model, data_reader)
-        print("Epoch: ", e, " ---> Train Loss: ", train_loss)
+        print("\nEpoch: ", e, " ---> Train Loss: ", train_loss)
         if val_data !== nothing
             val_loss = evaluate_model(model, val_data)
             push!(loss_history, (train_loss, val_loss))

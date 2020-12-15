@@ -8,6 +8,7 @@ end
 
 Pkg.add("CUDA")
 Pkg.add("Knet")
+Pkg.add("AutoGrad")
 Pkg.add("Images")
 Pkg.add("ImageMagick")
 # Pkg.add("ImageView")
@@ -17,5 +18,6 @@ Pkg.add("JLD2")
 Pkg.add("FileIO")
 Pkg.add("PyCall")
 Pkg.add("IJulia")
+Pkg.add("ProgressBars")
 
 Pkg.precompile()
