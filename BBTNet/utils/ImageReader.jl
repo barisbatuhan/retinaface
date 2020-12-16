@@ -11,8 +11,9 @@ mutable struct Image_Reader
     end
 end
 
-function read_img(r::Image_Reader, dir, new_boxes, len)
+function read_img(r::Image_Reader, dir, boxes, len)
     img = channelview(load(dir))
+    new_boxes = deepcopy(boxes)
     if r.augment 
         roi = _find_roi(r, img)
         # horizontal flip
@@ -63,12 +64,12 @@ function _find_roi(r::Image_Reader, img)
     return [x1 y1 x2 y2] 
 end
 
-function crop_image(img, bboxes, roi)
+function crop_image(img, new_boxes, roi)
     img = img[:, roi[2]:roi[4], roi[1]:roi[3]]
-    new_boxes = deepcopy(bboxes)
     box_size = size(new_boxes)
-    # setting landmarks outside of the region to -1
+
     for person in 1:box_size[2]
+        # setting landmarks outside of the region to -1
         for lm in 5:2:box_size[1]-2
             # if not in the cropped area
             if (new_boxes[lm, person] > roi[3]) || 
@@ -102,14 +103,14 @@ function crop_image(img, bboxes, roi)
                 new_boxes[4,person] = roi[4]
             end  
             
-            if 0 <= new_boxes[1,person] < roi[1]
+            if 0 <= new_boxes[1,person] && new_boxes[1,person] < roi[1]
                 new_boxes[1,person] = 0
             else
                 new_boxes[1,person] -= roi[1]
             end 
             new_boxes[3,person] -= roi[1]
             
-            if 0 <= new_boxes[2,person] < roi[2]
+            if 0 <= new_boxes[2,person] && new_boxes[2,person] < roi[2]
                 new_boxes[2,person] = 0
             else
                 new_boxes[2,person] -= roi[2]
@@ -121,15 +122,15 @@ function crop_image(img, bboxes, roi)
     return img, new_boxes
 end
 
-function resize_square_img(img, bboxes, new_len, old_len)
+function resize_square_img(img, new_boxes, new_len, old_len)
     img = imresize(img, (3, new_len, new_len))
     ratio = new_len / old_len
-    bboxes .*= ratio
-    bboxes[bboxes .< 0] .= -1
-    return img, bboxes
+    new_boxes = ratio .* new_boxes
+    new_boxes[new_boxes .< 0] .= -1
+    return img, new_boxes
 end
 
-function squaritize_img(img, bboxes)
+function squaritize_img(img, new_boxes)
     c, h, w = size(img)
     maxlen = max(h, w); minlen = min(h, w)
     if h == w return img, bboxes, maxlen
@@ -141,23 +142,23 @@ function squaritize_img(img, bboxes)
         if mod(diff, 2) == 1 pads[1] += 1 end
         if minlen == w
             full_img[:,:,pads[1]+1:maxlen-pads[2]] = img
-            bboxes[1:2:13,:] .+= pads[1]
+            new_boxes[1:2:13,:] .+= pads[1]
         else
             full_img[:,pads[1]+1:maxlen-pads[2],:] = img
-            bboxes[2:2:14,:] .+= pads[1]
+            new_boxes[2:2:14,:] .+= pads[1]
         end
-        return full_img, bboxes, maxlen
+        return full_img, new_boxes, maxlen
     end
 end
 
-function flip_horizontal(img, bboxes)
+function flip_horizontal(img, new_boxes)
     img = reverse(img, dims=3)
-    bboxes[1:2:13,:] .= size(img, 3) .- bboxes[1:2:13,:]
-    temp = bboxes[1,:]
-    bboxes[3,:] .= bboxes[1,:]
-    bboxes[3,:] .= temp
-    bboxes[bboxes .> size(img, 3)] .= -1
-    return img, bboxes
+    new_boxes[1:2:13,:] .= size(img, 3) .- new_boxes[1:2:13,:]
+    temp = new_boxes[3,:]
+    new_boxes[3,:] .= new_boxes[1,:]
+    new_boxes[1,:] .= temp
+    new_boxes[new_boxes .> size(img, 3)] .= -1
+    return img, new_boxes
 end
 
 function distort_color(img)

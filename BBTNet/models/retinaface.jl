@@ -1,4 +1,6 @@
 using ProgressBars, Printf
+using JLD2
+using FileIO
 
 # Network codes
 include("../backbones/resnet.jl")
@@ -57,16 +59,20 @@ struct RetinaFace
     dtype
 end
 
-function RetinaFace(;dtype=Array{Float64}) 
+function RetinaFace(;dtype=Array{Float64}, load_path=nothing) 
     
-    return RetinaFace(
-        ResNet50(include_top=false, dtype=dtype), 
-        FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
-        HeadGetter(256, num_anchors, 2, dtype=dtype), HeadGetter(256, num_anchors, 2, dtype=dtype),
-        HeadGetter(256, num_anchors, 4, dtype=dtype), HeadGetter(256, num_anchors, 4, dtype=dtype),
-        HeadGetter(256, num_anchors, 10, dtype=dtype), HeadGetter(256, num_anchors, 10, dtype=dtype),
-        dtype
-    )   
+    if load_path !== nothing
+        return load_model(load_path)
+    else
+        return RetinaFace(
+            ResNet50(include_top=false, dtype=dtype), 
+            FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
+            HeadGetter(256, num_anchors, 2, dtype=dtype), HeadGetter(256, num_anchors, 2, dtype=dtype),
+            HeadGetter(256, num_anchors, 4, dtype=dtype), HeadGetter(256, num_anchors, 4, dtype=dtype),
+            HeadGetter(256, num_anchors, 10, dtype=dtype), HeadGetter(256, num_anchors, 10, dtype=dtype),
+            dtype
+        )   
+    end
 end
 
 # mode 1 means first context head, 2 means second context head, 0 means no context head
@@ -101,28 +107,22 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     # print("Passed Context Head structures.\n")
 
     if y === nothing && train == false
-        # returning direct values for evaluation
-        return class_vals, bbox_vals, landmark_vals 
-    elseif y === nothing
         # for predicting, the founded boxes should be decoded to their real values
-        bboxes_decoded, landmarks_decoded = decode_points(bbox_vals, landmark_vals)
-        print("Predicted points are decoded.\n")
+        class_vals = Array(class_vals); bbox_vals = Array(bbox_vals); landmark_vals = Array(landmark_vals);
+        bbox_vals, landmark_vals = decode_points(bbox_vals, landmark_vals)
         
-        indices = findall(class_vals[:,:,1] .>= conf_level)
         N = size(class_vals)[1]
-        boxes = []
-        for n in 1:N push!(boxes, []) end
-        for idx in indices push!(boxes[idx[1]], idx[2]) end
-
         cl_results = []; bbox_results = []; landmark_results = []
-        for n in 1:N
-            push!(cl_results, class_vals[n, boxes[n], :])
-            push!(bbox_results, bboxes_decoded[n, boxes[n], :])
-            push!(landmark_results, landmarks_decoded[n, boxes[n], :])
-        end
-
+        
+        for n in 1:N 
+            indices = findall(class_vals[n,:,1] .>= conf_level)
+            push!(cl_results, class_vals[n, indices, :])
+            push!(bbox_results, bbox_vals[n, indices, :])
+            push!(landmark_results, landmark_vals[n, indices, :])
+        end  
         print("Returning prediction results above confidence level: ", conf_level, ".\n")
         return  cl_results, bbox_results, landmark_results 
+    
     else
         # for training, loss will be calculated and returned
         affected_loss = 0
@@ -177,8 +177,8 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     end
 end
 
-function train_model(model::RetinaFace, data_reader; val_data=nothing)
-    print("\n============================== TRAINING PROCESS ==============================\n\n")
+function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=nothing)
+    print("\n============================================= TRAINING PROCESS =============================================\n\n")
     loss_history = []
 
     for e in 1:num_epochs
@@ -201,7 +201,7 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing)
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
             if mod(iter_no, 20) == 0 
-                last_loss = model(imgs, boxes, train=false)
+                last_loss = model(imgs, boxes, mode, false, 0)
             end
             (imgs, boxes), state = iterate(data_reader, state)
             for _ in 1:size(imgs)[end] iterate(curr_batch, 1) end
@@ -219,22 +219,31 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing)
             push!(loss_history, train_loss)
         end
         print("\n")
+        
+        if save_dir !== nothing
+            save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
+        end
     end
     return loss_history
 end
 
 function evaluate_model(model::RetinaFace, data_reader)
     (imgs, boxes), state = iterate(data_reader)
-    imgs = convert(model.dtype, permutedims(imgs, (3,2,1,4)))
-    boxes = convert(model.dtype, boxes)
     num_iters = 0
     loss_val = 0.0
     while state !== nothing
-        loss_val += model(imgs, y=boxes, train=false)
+        loss_val += model(imgs, y=boxes, mode, false, 0)
         num_iters += 1
         (imgs, boxes), state = iterate(data_reader)
-        imgs = convert(model.dtype, permutedims(imgs, (3,2,1,4)))
-        boxes = convert(model.dtype, boxes)
     end
     return loss_val / num_iters
+end
+
+function load_model(file_name)
+    model_dict = load(file_name)
+    return model_dict["model"]
+end
+
+function save_model(model::RetinaFace, file_name)
+    @save file_name model
 end

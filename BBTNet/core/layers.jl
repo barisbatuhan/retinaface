@@ -16,10 +16,10 @@ A custom constructor for Dense
     f       : Activation function
     pdrop   : Dropout ratio
 """
-function Dense(i::Int, o::Int; f=nothing, pdrop=0, dtype=Array{Float64}, bias=true) 
+function Dense(i::Int, o::Int; init=xavier_uniform, f=nothing, pdrop=0, dtype=Array{Float64}, bias=true) 
     b = nothing
     if bias b = Param(convert(dtype, zeros(o, 1))) end
-    return Dense(Param(convert(dtype, randn(o, i))), b, f, pdrop)
+    return Dense(Param(convert(dtype, init(o, i))), b, f, pdrop)
 end
 
 # Dense Layer Forward Pass
@@ -59,14 +59,14 @@ A custom constructor for Conv2D
     dilation    : Dilation size
 """
 function Conv2D(
-    w1::Int, w2::Int, input_dim::Int, output_dim::Int; f=nothing, 
+    w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, 
     pdrop=0, padding=0, stride=1, dilation=1, bias=true, dtype=Array{Float64}
     ) 
     b = nothing
     if bias b = Param(convert(dtype, zeros(1, 1, output_dim, 1))) end
     
     return Conv2D(
-        Param(convert(dtype, xavier(w1, w2, input_dim, output_dim))),
+        Param(convert(dtype, init(w1, w2, input_dim, output_dim))),
         b, f, pdrop, padding, stride, dilation
         )
 end

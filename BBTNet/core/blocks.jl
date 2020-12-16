@@ -15,10 +15,10 @@ A custom constructor for Conv2D + BatchNorm + Activation layer
 """
 struct ConvBn conv; bn; f; alpha; end
 
-function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; f=nothing, alpha=0, 
+function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, alpha=0, 
     pdrop=0, bias=true, padding=0, stride=1, dilation=1, dtype=Array{Float64}, momentum=0.1)
     return ConvBn(
-        Conv2D(w1, w2, input_dim, output_dim, pdrop=pdrop, dtype=dtype,
+        Conv2D(w1, w2, input_dim, output_dim, pdrop=pdrop, dtype=dtype, init=init,
                 padding=padding, stride=stride, dilation=dilation, bias=bias),
         BatchNorm(momentum=momentum),
         f, alpha
@@ -41,21 +41,21 @@ Network with more than 50 layers.
 """
 mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv3; bn3; end
 
-function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1,
+function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1, init=xavier_uniform,
                         bias=false, momentum=0.1, pdrop=0, dtype=Array{Float64})
     ds_layer = nothing
     if downsample
-        ds_layer = ConvBn(1, 1, input_dim, filter_sizes[3], bias=bias, 
+        ds_layer = ConvBn(1, 1, input_dim, filter_sizes[3], bias=bias, init=init,
                             momentum=momentum, dtype=dtype, stride=ds_3x3_stride)
     end
     
     return Residual_1x3x1(
         ds_layer,
-        ConvBn(1, 1, input_dim, filter_sizes[1], bias=bias, momentum=momentum, 
+        ConvBn(1, 1, input_dim, filter_sizes[1], bias=bias, momentum=momentum, init=init,
                 dtype=dtype, pdrop=pdrop, f=relu),
-        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], padding=1, bias=bias, 
+        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], padding=1, bias=bias, init=init,
                 momentum=momentum, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
-        Conv2D(1, 1, filter_sizes[2], filter_sizes[3], pdrop=pdrop, dtype=dtype, bias=bias),
+        Conv2D(1, 1, filter_sizes[2], filter_sizes[3], init=init, pdrop=pdrop, dtype=dtype, bias=bias),
         BatchNorm(momentum=momentum)
     )
 end

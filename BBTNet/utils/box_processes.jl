@@ -4,7 +4,7 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     priors = _get_priorboxes(dtype=dtype)
     decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors) * img_size
     decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end])  
-    iou_vals = iou(gt[:,1:4], _to_min_max_form(bboxes), dtype=dtype) 
+    iou_vals = iou(gt[:,1:4], decoded_bboxes) 
     
     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2) # gets max values and indices for each gt
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) # gets max values and indices for each prior
@@ -26,10 +26,10 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
      
     """
     Below, encoding of the initial ground truth labels will be made. In the paper the process is summarized as:
-    Box_lengths     = log(gt_w / scale) + log(gt_h / scale)
-    Point_coords    = [(bbox_x1 - anchor_center_x) / scale] + [(bbox_x2 - anchor_center_x) / scale] # bbox x-coord loss
-                    + [(bbox_y1 - anchor_center_y) / scale] + [(bbox_y2 - anchor_center_y) / scale] # bbox y-coord loss
-                    + for each landmark {[(landmark_x - anchor_center_x) / scale] + [(landmark_y - anchor_center_y) / scale]}
+    Box_lengths     = log(gt_w / scale), log(gt_h / scale)
+    Point_coords    = [(bbox_x1 - anchor_center_x) / scale], [(bbox_x2 - anchor_center_x) / scale], 
+                      [(bbox_y1 - anchor_center_y) / scale], [(bbox_y2 - anchor_center_y) / scale],
+                      for each landmark {[(landmark_x - anchor_center_x) / scale], [(landmark_y - anchor_center_y) / scale]}
     
     Here, the scale is actually the width and height of the prior anchor box.
     """
@@ -63,15 +63,8 @@ B   : number of boxes in boxes2
 
 Return: iou values with shape (A, B)
 """
-function iou(boxes1, boxes2; dtype=Array{Float32})
+function iou(boxes1, boxes2)
     A, C = size(boxes1); B, D = size(boxes2)
-    
-    # if run_gpu
-    #     # KnetArray does not support repeat method, thus, CuArray used here.
-    #     boxes1 = CuArray(boxes1)
-    #     boxes2 = CuArray(boxes2)
-    # end
-    
     intersections = _get_intersections(boxes1, boxes2)
     
     area1 = (boxes1[:,4] .- boxes1[:,2]) .* (boxes1[:,3] .- boxes1[:,1])
@@ -79,14 +72,6 @@ function iou(boxes1, boxes2; dtype=Array{Float32})
 
     area1 = repeat(reshape(area1, (A, 1)), outer=(1, B))
     area2 = repeat(reshape(area2, (1, B)), outer=(A, 1))
-    
-    # if run_gpu
-    #     boxes1 = convert(dtype, boxes1)
-    #     boxes2 = convert(dtype, boxes2)
-    #     intersections = convert(dtype, intersections)
-    #     area1 = convert(dtype, area1)
-    #     area2 = convert(dtype, area2)
-    # end
     
     unions = area1 .+ area2 .- intersections
     return intersections ./ unions
@@ -99,10 +84,15 @@ If the start of a box is negative or bigger than the image size, then
 it is set to either 0 or image size.
 """
 function _to_min_max_form(boxes)
-    half_lens = boxes[:,3:4] ./ 2
-    return cat(
-        max.(boxes[:,1:2] .- half_lens, 0), 
-        min.(boxes[:,1:2] .+ half_lens, img_size), dims=2)
+    if size(size(boxes), 1) == 3
+        half_lens = boxes[:,:,3:4] ./ 2
+        return cat(max.(boxes[:,:,1:2] .- half_lens, 0), min.(boxes[:,:,1:2] .+ half_lens, img_size), dims=3)
+    elseif size(size(boxes), 1) == 2
+        half_lens = boxes[:,3:4] ./ 2
+        return cat(max.(boxes[:,1:2] .- half_lens, 0), min.(boxes[:,1:2] .+ half_lens, img_size), dims=2)
+    else
+        print("[ERROR] From Center to Min-Max point conversion for a box dimension ", size(size(boxes), 1), " is not supported!\n")
+    end
 end
 
 """
@@ -182,18 +172,18 @@ end
 
 function _decode_bboxes(bbox, priors)
     P = size(priors)[1]
-    centers = reshape(priors[:, 1:2], (1, P, 2)) + bbox[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
+    centers = reshape(priors[:, 1:2], (1, P, 2)) .+ bbox[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
     lengths = exp.(reshape(priors[:, 3:end], (1, P, 2)) .* bbox[:, :, 3:end])
     centers .-= centers ./ 2
-    return cat(centers, lengths, dims=3)
+    return _to_min_max_form(cat(centers, lengths, dims=3))
 end
 
 function _decode_landmarks(landmarks, priors)
     P = size(priors)[1]
-    lm1 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm2 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 3:4] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm3 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 5:6] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm4 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 7:8] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm5 = reshape(priors[:, 1:2], (1, P, 2)) + landmarks[:, :, 9:10] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm1 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm2 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 3:4] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm3 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 5:6] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm4 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 7:8] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm5 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 9:10] .* reshape(priors[:, 3:end], (1, P, 2))
     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
 end
