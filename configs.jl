@@ -5,15 +5,19 @@ Global hyper parameters are defined here for simplicity in
 changing their values.
 """
 # Image and Data Paths
-wf_path = "/datasets/widerface/WIDER_"
-wf_labels_path = "/datasets/widerface/retinaface/"
-fddb_path = "/datasets/fddb/"
-aflw_path = "/datasets/aflw/"
+wf_path         = "/datasets/widerface/WIDER_"
+wf_labels_path  = "/datasets/widerface/retinaface/"
+fddb_path       = "/datasets/fddb/"
+aflw_path       = "/datasets/aflw/"
 
+# Weight Paths
+save_dir        = "./weights/"
+load_path       = "./weights/model_best.jld2"
 
 # Image Crop Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
+avg_img         = zeros(224, 224, 3) # will be set in resnet pretrained weights load
 
 # Anchor Metrics
 num_anchors     = 3

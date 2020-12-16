@@ -13,14 +13,14 @@ A custom constructor for Conv2D + BatchNorm + Activation layer
     stride      : Stride size
     dilation    : Dilation size
 """
-struct ConvBn conv; bn; f; alpha; end
+mutable struct ConvBn conv; bn; f; alpha; end
 
 function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, alpha=0, 
-    pdrop=0, bias=true, padding=0, stride=1, dilation=1, dtype=Array{Float64}, momentum=0.1)
+    pdrop=0, bias=true, padding=0, stride=1, dilation=1, dtype=Array{Float32}, momentum=0.1)
     return ConvBn(
         Conv2D(w1, w2, input_dim, output_dim, pdrop=pdrop, dtype=dtype, init=init,
                 padding=padding, stride=stride, dilation=dilation, bias=bias),
-        BatchNorm(momentum=momentum),
+        BatchNorm(momentum=momentum, channels=output_dim, dtype=dtype),
         f, alpha
     )
 end
@@ -39,10 +39,10 @@ end
 Residual Layer structure with kernel sizes 1x1, 3x3, 1x1 in order. Used mostly in ResNet
 Network with more than 50 layers.
 """
-mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv3; bn3; end
+mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv_bn3; dtype; end
 
 function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1, init=xavier_uniform,
-                        bias=false, momentum=0.1, pdrop=0, dtype=Array{Float64})
+                        bias=false, momentum=0.1, pdrop=0, dtype=Array{Float32})
     ds_layer = nothing
     if downsample
         ds_layer = ConvBn(1, 1, input_dim, filter_sizes[3], bias=bias, init=init,
@@ -51,24 +51,49 @@ function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride
     
     return Residual_1x3x1(
         ds_layer,
-        ConvBn(1, 1, input_dim, filter_sizes[1], bias=bias, momentum=momentum, init=init,
-                dtype=dtype, pdrop=pdrop, f=relu),
+        ConvBn(1, 1, input_dim, filter_sizes[1], bias=bias, momentum=momentum, init=init,dtype=dtype, pdrop=pdrop, f=relu),
         ConvBn(3, 3, filter_sizes[1], filter_sizes[2], padding=1, bias=bias, init=init,
                 momentum=momentum, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
-        Conv2D(1, 1, filter_sizes[2], filter_sizes[3], init=init, pdrop=pdrop, dtype=dtype, bias=bias),
-        BatchNorm(momentum=momentum)
+        ConvBn(1, 1, filter_sizes[2], filter_sizes[3], init=init, momentum=momentum, pdrop=pdrop, dtype=dtype, bias=bias),
+        dtype
     )
 end
 
 function (r::Residual_1x3x1)(x; train=true)
     x_val = r.conv_bn1(x, train=train)
     x_val = r.conv_bn2(x_val, train=train)
-    x_val = r.conv3(x_val, train=train)
+    x_val = r.conv_bn3(x_val, train=train)
     if r.downsample === nothing x_val += x
     else x_val += r.downsample(x, train=train)
     end
-    x_val = relu.(r.bn3(x_val))
-    return x_val
+    return relu.(x_val)
+end
+
+function load_mat_weights(block::Residual_1x3x1, conv_w, bn_mom, bn_b, bn_mult)
+    idx = 1; mom_idx = 1; 
+    
+    if block.downsample !== nothing
+        block.downsample.conv.w = Param(convert(block.dtype, conv_w[idx]))
+        block.downsample.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
+        block.downsample.bn.bn_params = Param(convert(block.dtype, vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+        idx += 1; mom_idx += 2; 
+    end
+
+    block.conv_bn1.conv.w = Param(convert(block.dtype, conv_w[idx]))
+    block.conv_bn1.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
+    block.conv_bn1.bn.bn_params = Param(convert(block.dtype, vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    idx += 1; mom_idx += 2; 
+    
+    block.conv_bn2.conv.w = Param(convert(block.dtype, conv_w[idx]))
+    block.conv_bn2.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
+    block.conv_bn2.bn.bn_params = Param(convert(block.dtype,vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    idx += 1; mom_idx += 2; 
+    
+    block.conv_bn3.conv.w = Param(convert(block.dtype, conv_w[idx]))
+    block.conv_bn3.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
+    block.conv_bn3.bn.bn_params = Param(convert(block.dtype,vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    
+    return block
 end
 
 """

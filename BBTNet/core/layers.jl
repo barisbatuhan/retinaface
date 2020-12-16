@@ -16,7 +16,7 @@ A custom constructor for Dense
     f       : Activation function
     pdrop   : Dropout ratio
 """
-function Dense(i::Int, o::Int; init=xavier_uniform, f=nothing, pdrop=0, dtype=Array{Float64}, bias=true) 
+function Dense(i::Int, o::Int; init=xavier_uniform, f=nothing, pdrop=0, dtype=Array{Float32}, bias=true) 
     b = nothing
     if bias b = Param(convert(dtype, zeros(o, 1))) end
     return Dense(Param(convert(dtype, init(o, i))), b, f, pdrop)
@@ -60,7 +60,7 @@ A custom constructor for Conv2D
 """
 function Conv2D(
     w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, 
-    pdrop=0, padding=0, stride=1, dilation=1, bias=true, dtype=Array{Float64}
+    pdrop=0, padding=0, stride=1, dilation=1, bias=true, dtype=Array{Float32}
     ) 
     b = nothing
     if bias b = Param(convert(dtype, zeros(1, 1, output_dim, 1))) end
@@ -91,15 +91,48 @@ end
 Batch Normalization Layer
 - works both for convolutional and fully connected layers
 """
-mutable struct BatchNorm bn_params; end
+mutable struct BatchNorm bn_moments; bn_params; end
 
-function BatchNorm(;momentum=0.1) 
-    return BatchNorm(bnmoments(momentum=momentum))
+function BatchNorm(;channels=1, momentum=0.1, dtype=Array{Float32}) 
+    return BatchNorm(
+        bnmoments(momentum=momentum),
+        convert(dtype, bnparams(Float32, channels))
+    )
 end
 
-function (bn::BatchNorm)(x; train=true)
-    return batchnorm(x, bn.bn_params; training=train)
+function (bn::BatchNorm)(x; train=true)  
+    return batchnorm(x, bn.bn_moments, bn.bn_params; training=train)
 end
+
+
+# struct BatchNormLayer; w; ms; 
+
+#     function BatchNormLayer(pre_w, pre_ms)
+#         res_mean = popfirst!(pre_ms)
+#         # Trick to arrange variance value for new(er) batchnorm
+#         res_variance =   popfirst!(pre_ms).^2  .- 1e-5
+#         ms = bnmoments(mean=res_mean, var=res_variance)
+    
+#         w1 = pre_w[1]
+#         w2 = pre_w[2]
+#         w1 = vec(w1)
+#         w2 = vec(w2)
+#         w =  vcat(w1, w2)
+#         param_w = param(w, atype=Knet.atype())
+#         return new(param_w, ms)
+#     end
+
+# end
+
+# function (batch_norm_layer::BatchNormLayer)(x)
+#     return batchnorm(x, batch_norm_layer.ms, batch_norm_layer.w; eps=1e-5)
+# end
+
+
+
+
+
+
 
 
 

@@ -64,8 +64,10 @@ function RetinaFace(;dtype=Array{Float64}, load_path=nothing)
     if load_path !== nothing
         return load_model(load_path)
     else
+        backbone = ResNet50(include_top=false, dtype=dtype)
+        backbone = load_mat_weights(backbone, "./weights/imagenet-resnet-50-dag.mat")
         return RetinaFace(
-            ResNet50(include_top=false, dtype=dtype), 
+            backbone,
             FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
             HeadGetter(256, num_anchors, 2, dtype=dtype), HeadGetter(256, num_anchors, 2, dtype=dtype),
             HeadGetter(256, num_anchors, 4, dtype=dtype), HeadGetter(256, num_anchors, 4, dtype=dtype),
@@ -189,7 +191,7 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         curr_batch = ProgressBar(1:total_batches, width =100)
         
         while state !== nothing 
-            set_description(curr_batch, string(@sprintf("Epoch: %d", e)))
+            set_description(curr_batch, string(@sprintf("Epoch: %d --> ", e)))
             set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
             if e < lr_change_epoch[1]
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
@@ -200,12 +202,14 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             else
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
-            if mod(iter_no, 20) == 0 
-                last_loss = model(imgs, boxes, mode, false, 0)
-            end
+            last_loss = model(imgs, boxes, mode, false, 0)
             (imgs, boxes), state = iterate(data_reader, state)
             for _ in 1:size(imgs)[end] iterate(curr_batch, 1) end
             iter_no += 1
+        end
+        
+        if save_dir !== nothing
+            save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
         end
         
         # Evaluate both training and val data after each epoch.
@@ -219,10 +223,6 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             push!(loss_history, train_loss)
         end
         print("\n")
-        
-        if save_dir !== nothing
-            save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
-        end
     end
     return loss_history
 end
@@ -232,7 +232,7 @@ function evaluate_model(model::RetinaFace, data_reader)
     num_iters = 0
     loss_val = 0.0
     while state !== nothing
-        loss_val += model(imgs, y=boxes, mode, false, 0)
+        loss_val += model(imgs, boxes, mode, false, 0)
         num_iters += 1
         (imgs, boxes), state = iterate(data_reader)
     end
