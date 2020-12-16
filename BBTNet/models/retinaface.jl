@@ -183,11 +183,11 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing)
 
     for e in 1:num_epochs
         (imgs, boxes), state = iterate(data_reader)
-        print(size(imgs), size(boxes), '\n')
         iter_no = 1
+        last_loss = 0
         total_batches = size(state, 1) + size(imgs)[end]
         curr_batch = ProgressBar(1:total_batches, width =100)
-        last_loss = 0
+        
         while state !== nothing 
             set_description(curr_batch, string(@sprintf("Epoch: %d", e)))
             set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
@@ -204,9 +204,10 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing)
                 last_loss = model(imgs, boxes, train=false)
             end
             (imgs, boxes), state = iterate(data_reader, state)
-            iterate(curr_batch, size(imgs)[end])
+            for _ in 1:size(imgs)[end] iterate(curr_batch, 1) end
             iter_no += 1
         end
+        
         # Evaluate both training and val data after each epoch.
         train_loss = evaluate_model(model, data_reader)
         print("\nEpoch: ", e, " ---> Train Loss: ", train_loss)
