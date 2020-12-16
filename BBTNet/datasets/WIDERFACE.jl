@@ -80,7 +80,6 @@ function iterate(data::WIDER_Data, state=ifelse(
         return nothing
     else 
         imgs = data.files[state[1:data.batch_size]]
-        # imgs = ["13--Interview/13_Interview_Interview_2_People_Visible_13_380.jpg"]
         imgs_arr = zeros(3, img_size, img_size, data.batch_size)
         labels = []
         idx = 1
@@ -92,7 +91,6 @@ function iterate(data::WIDER_Data, state=ifelse(
             idx += 1
         end
         imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
-        print("\n", imgs, "\n")
         return (imgs_arr, labels), state[data.batch_size+1:end]
     end
 end

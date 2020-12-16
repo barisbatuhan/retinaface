@@ -70,7 +70,7 @@ function RetinaFace(;dtype=Array{Float64})
 end
 
 # mode 1 means first context head, 2 means second context head, 0 means no context head
-function (model::RetinaFace)(x, y=nothing; mode=0, train=true, weight_decay=0)
+function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
@@ -172,19 +172,18 @@ function (model::RetinaFace)(x, y=nothing; mode=0, train=true, weight_decay=0)
                 end
             end
         end
-        print("\nFinal loss: ", loss_val, '\n')
+        # print("\nFinal loss: ", loss_val, '\n')
         return loss_val
     end
 end
 
 function train_model(model::RetinaFace, data_reader; val_data=nothing)
     print("\n============================== TRAINING PROCESS ==============================\n\n")
-    # momentum=0.9; weight_decay = 0.0005
-    num_epochs = 80
     loss_history = []
 
     for e in 1:num_epochs
         (imgs, boxes), state = iterate(data_reader)
+        print(size(imgs), size(boxes), '\n')
         iter_no = 1
         total_batches = size(state, 1) + size(imgs)[end]
         curr_batch = ProgressBar(1:total_batches, width =100)
@@ -192,14 +191,14 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing)
         while state !== nothing 
             set_description(curr_batch, string(@sprintf("Epoch: %d", e)))
             set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
-            if e < 5
-                momentum!(model, [(imgs, boxes)], lr=1e-3, gamma=0.9)
-            elseif e < 55
-                momentum!(model, [(imgs, boxes)], lr=1e-2, gamma=0.9)
-            elseif e < 68
-                momentum!(model, [(imgs, boxes)], lr=1e-3, gamma=0.9)
+            if e < lr_change_epoch[1]
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
+            elseif e < lr_change_epoch[2]
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[2], gamma=momentum)
+            elseif e < lr_change_epoch[3]
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[3], gamma=momentum)
             else
-                momentum!(model, [(imgs, boxes)], lr=1e-4, gamma=0.9)
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
             if mod(iter_no, 20) == 0 
                 last_loss = model(imgs, boxes, train=false)

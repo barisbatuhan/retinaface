@@ -36,10 +36,13 @@ lambda1         = 1
 lambda2         = 1
 
 # Training Parameters
-batch_size      = 24
-epoch           = 100
-decay1          = 70
-decay2          = 9
+batch_size      = 4
+num_epochs      = 80
+weight_decay    = 0.0005
+momentum        = 0.9
+lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
+lr_change_epoch = [5, 55, 68]
+mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
 
 # Testing Parameters
 conf_level      = 0.99999

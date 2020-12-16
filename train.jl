@@ -6,7 +6,6 @@ import Random
 
 Random.seed!(42)
 
-data = WIDER_Data(wf_path * "train/", wf_labels_path * "train/", train=true, batch_size=1, dtype=atype)
-
+data = WIDER_Data(wf_path * "train/", wf_labels_path * "train/", train=true, batch_size=batch_size, dtype=atype)
 model = RetinaFace(dtype=atype)
 train_model(model, data)
