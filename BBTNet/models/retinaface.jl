@@ -153,26 +153,27 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             batch_cls[n, pos_indices] .= 1
             batch_cls[n, neg_indices] .= 2
             affected_loss += 1
-            pos_cnts[n] += length(pos_indices)
+            pos_cnts[n] = length(pos_indices)
         end
-        if affected_loss > 0 
+        if affected_loss > 0 # if a bounding box is found with an IOU value more than threshold
             class_vals = reshape(class_vals, (size(class_vals, 3), prod(size(class_vals)[1:2])))
             batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
             loss_val += nll(class_vals, batch_cls)
             # print("After nll: ", loss_val, "\n")
-        end
-        pos_cnts = convert(model.dtype, pos_cnts)
-        loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
-        # print("After bbox: ", loss_val, "\n")
-        loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
-        # print("After lm: ", loss_val, "\n")
-        
-        if loss_val > 0
+            pos_cnts = convert(model.dtype, pos_cnts)
+            loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
+            # print("After bbox: ", loss_val, "\n")
+            loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
+            # print("After lm: ", loss_val, "\n")
+
             loss_val /= affected_loss
             if weight_decay > 0
                 for p in params(model)
                     # weight decay process
-                    loss_val -= weight_decay * sum(p.^2)
+                    if size(size(p), 1) == 4 && size(p, 4) > 1
+                        # only taking weights but not biases and moments
+                        loss_val -= weight_decay * sum(p.^2)
+                    end
                 end
             end
         end
@@ -193,6 +194,8 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         curr_batch = ProgressBar(1:total_batches, width=100)
         
         while state !== nothing 
+#             (imgs, boxes), _ = iterate(data_reader, state)
+            last_loss = model(deepcopy(imgs), deepcopy(boxes), mode, false, weight_decay)
             set_description(curr_batch, string(@sprintf("Epoch: %d --> ", e)))
             set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
             if e < lr_change_epoch[1]
@@ -204,29 +207,30 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             else
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
-            last_loss = model(imgs, boxes, mode, false, 0)
             (imgs, boxes), state = iterate(data_reader, state)
             for _ in 1:size(imgs)[end] iterate(curr_batch, 1) end
             iter_no += 1
         end
+        
+        curr_batch = nothing
         
         if save_dir !== nothing
             save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
         end
         
         # Evaluate both training and val data after each epoch.
-        train_loss = evaluate_model(model, data_reader)
-        print("\nEpoch: ", e, " ---> Train Loss: ", train_loss)
-        if val_data !== nothing
-            val_loss = evaluate_model(model, val_data)
-            push!(loss_history, (train_loss, val_loss))
-            print(" || Validation Loss: ", val_loss)
-        else
-            push!(loss_history, train_loss)
-        end
-        print("\n")
+#         train_loss = evaluate_model(model, data_reader)
+#         print("\nEpoch: ", e, " ---> Train Loss: ", train_loss)
+#         if val_data !== nothing
+#             val_loss = evaluate_model(model, val_data)
+#             push!(loss_history, (train_loss, val_loss))
+#             print(" || Validation Loss: ", val_loss)
+#         else
+#             push!(loss_history, train_loss)
+#         end
+#         print("\n")
     end
-    return loss_history
+#     return loss_history
 end
 
 function evaluate_model(model::RetinaFace, data_reader)
