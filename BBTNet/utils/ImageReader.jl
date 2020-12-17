@@ -13,6 +13,13 @@ end
 
 function read_img(r::Image_Reader, dir, boxes, len)
     img = channelview(load(dir))
+    
+    if boxes === nothing
+        img, _, maxlen = squaritize_img(img, nothing)
+        img, _ = resize_square_img(img, nothing, len, maxlen) 
+        return img -= avg_img 
+    end
+    
     new_boxes = deepcopy(boxes)
     if r.augment 
         roi = _find_roi(r, img)
@@ -44,6 +51,7 @@ function read_img(r::Image_Reader, dir, boxes, len)
         end
     end
     
+    img -= avg_img 
     new_boxes = new_boxes[:,common_indices]  
     return img, new_boxes
 end
@@ -125,15 +133,17 @@ end
 function resize_square_img(img, new_boxes, new_len, old_len)
     img = imresize(img, (3, new_len, new_len))
     ratio = new_len / old_len
-    new_boxes = ratio .* new_boxes
-    new_boxes[new_boxes .< 0] .= -1
+    if new_boxes !== nothing
+        new_boxes = ratio .* new_boxes
+        new_boxes[new_boxes .< 0] .= -1
+    end
     return img, new_boxes
 end
 
 function squaritize_img(img, new_boxes)
     c, h, w = size(img)
     maxlen = max(h, w); minlen = min(h, w)
-    if h == w return img, bboxes, maxlen
+    if h == w return img, new_boxes, maxlen
     else
         full_img = zeros(3, maxlen, maxlen)
         diff = maxlen - minlen
@@ -142,10 +152,14 @@ function squaritize_img(img, new_boxes)
         if mod(diff, 2) == 1 pads[1] += 1 end
         if minlen == w
             full_img[:,:,pads[1]+1:maxlen-pads[2]] = img
-            new_boxes[1:2:13,:] .+= pads[1]
+            if new_boxes !== nothing 
+                new_boxes[1:2:13,:] .+= pads[1]
+            end
         else
             full_img[:,pads[1]+1:maxlen-pads[2],:] = img
-            new_boxes[2:2:14,:] .+= pads[1]
+            if new_boxes !== nothing 
+                new_boxes[2:2:14,:] .+= pads[1]
+            end
         end
         return full_img, new_boxes, maxlen
     end

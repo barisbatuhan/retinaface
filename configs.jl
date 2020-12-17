@@ -1,4 +1,4 @@
-using Knet
+using Images, Knet
 
 """
 Global hyper parameters are defined here for simplicity in
@@ -13,11 +13,12 @@ aflw_path       = "/datasets/aflw/"
 # Weight Paths
 save_dir        = "./weights/"
 load_path       = "./weights/model_best.jld2"
+r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
 
-# Image Crop Metrics
+# Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
-avg_img         = zeros(224, 224, 3) # will be set in resnet pretrained weights load
+avg_img         = channelview(Images.imresize(load("./data/avgImg.jpg"), (img_size, img_size)))
 
 # Anchor Metrics
 num_anchors     = 3

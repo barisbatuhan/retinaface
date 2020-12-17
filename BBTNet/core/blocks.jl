@@ -6,7 +6,7 @@ A custom constructor for Conv2D + BatchNorm + Activation layer
     w2          : Second dimension of the kernel
     input_dim   : Channel dimension of the input
     output_dim  : Filter size
-    f           : For relu pass "relu" and for leaky relu pass "leaky_relu"
+    f           : For leaky relu pass "leaky_relu"
     alpha       : Activation constant for leaky relu, please leave as default or set to 0 for relu
     pdrop       : Dropout ratio
     padding     : Padding size
@@ -28,10 +28,8 @@ end
 function (cbr::ConvBn)(x; train=true)
     x_val = cbr.bn(cbr.conv(x, train=train), train=train)
     if cbr.f === nothing return x_val
-    elseif cbr.f == relu || cbr.f == "relu" || cbr.f == "leaky_relu" 
-        return max.(cbr.alpha .* x_val, x_val)
-    else
-        return cbr.f.(x_val)
+    elseif cbr.f == "leaky_relu" return max.(cbr.alpha .* x_val, x_val)
+    else return cbr.f.(x_val)
     end
 end
 
@@ -42,19 +40,17 @@ Network with more than 50 layers.
 mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv_bn3; dtype; end
 
 function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1, init=xavier_uniform,
-                        bias=false, momentum=0.1, pdrop=0, dtype=Array{Float32})
+                        bias=false, pdrop=0, dtype=Array{Float32})
     ds_layer = nothing
     if downsample
-        ds_layer = ConvBn(1, 1, input_dim, filter_sizes[3], bias=bias, init=init,
-                            momentum=momentum, dtype=dtype, stride=ds_3x3_stride)
+        ds_layer = ConvBn(1, 1, input_dim, filter_sizes[3], bias=bias, init=init, dtype=dtype, stride=ds_3x3_stride)
     end
     
     return Residual_1x3x1(
         ds_layer,
-        ConvBn(1, 1, input_dim, filter_sizes[1], bias=bias, momentum=momentum, init=init,dtype=dtype, pdrop=pdrop, f=relu),
-        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], padding=1, bias=bias, init=init,
-                momentum=momentum, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
-        ConvBn(1, 1, filter_sizes[2], filter_sizes[3], init=init, momentum=momentum, pdrop=pdrop, dtype=dtype, bias=bias),
+        ConvBn(1, 1, input_dim,       filter_sizes[1], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
+        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu,  padding=1),
+        ConvBn(1, 1, filter_sizes[2], filter_sizes[3], init=init, bias=bias, dtype=dtype, pdrop=pdrop),
         dtype
     )
 end
@@ -73,25 +69,25 @@ function load_mat_weights(block::Residual_1x3x1, conv_w, bn_mom, bn_b, bn_mult)
     idx = 1; mom_idx = 1; 
     
     if block.downsample !== nothing
-        block.downsample.conv.w = Param(convert(block.dtype, conv_w[idx]))
-        block.downsample.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
-        block.downsample.bn.bn_params = Param(convert(block.dtype, vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+        block.downsample.conv.w = Param(conv_w[idx])
+        block.downsample.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx], var=bn_mom[mom_idx+1])
+        block.downsample.bn.bn_params = Param(vcat(vec(bn_mult[idx]), vec(bn_b[idx])))
         idx += 1; mom_idx += 2; 
     end
 
-    block.conv_bn1.conv.w = Param(convert(block.dtype, conv_w[idx]))
-    block.conv_bn1.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
-    block.conv_bn1.bn.bn_params = Param(convert(block.dtype, vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    block.conv_bn1.conv.w = Param(conv_w[idx])
+    block.conv_bn1.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx], var=bn_mom[mom_idx+1])
+    block.conv_bn1.bn.bn_params = Param(vcat(vec(bn_mult[idx]), vec(bn_b[idx])))
     idx += 1; mom_idx += 2; 
     
-    block.conv_bn2.conv.w = Param(convert(block.dtype, conv_w[idx]))
-    block.conv_bn2.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
-    block.conv_bn2.bn.bn_params = Param(convert(block.dtype,vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    block.conv_bn2.conv.w = Param(conv_w[idx])
+    block.conv_bn2.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx], var=bn_mom[mom_idx+1])
+    block.conv_bn2.bn.bn_params = Param(vcat(vec(bn_mult[idx]), vec(bn_b[idx])))
     idx += 1; mom_idx += 2; 
     
-    block.conv_bn3.conv.w = Param(convert(block.dtype, conv_w[idx]))
-    block.conv_bn3.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx],var=bn_mom[mom_idx+1])
-    block.conv_bn3.bn.bn_params = Param(convert(block.dtype,vcat(vec(bn_mult[idx]), vec(bn_b[idx]))))
+    block.conv_bn3.conv.w = Param(conv_w[idx])
+    block.conv_bn3.bn.bn_moments = bnmoments(mean=bn_mom[mom_idx], var=bn_mom[mom_idx+1])
+    block.conv_bn3.bn.bn_params = Param(vcat(vec(bn_mult[idx]), vec(bn_b[idx])))
     
     return block
 end

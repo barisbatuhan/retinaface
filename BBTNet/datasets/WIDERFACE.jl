@@ -15,6 +15,7 @@ mutable struct WIDER_Data
     shuffle::Bool
     augment::Bool
     curr_idx::Int64
+    reader::Image_Reader
     dtype
     
     function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true, dtype=Array{Float32})
@@ -43,7 +44,7 @@ mutable struct WIDER_Data
             bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
-        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, dtype)
+        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(shuffle), dtype)
     end
 end
 
@@ -75,7 +76,6 @@ end
 function iterate(data::WIDER_Data, state=ifelse(
             data.shuffle, randperm(data.num_files), collect(1:data.num_files)))
     
-    r = Image_Reader(data.augment)
     if length(state) < data.batch_size || state === nothing
         return nothing
     else 
@@ -85,12 +85,12 @@ function iterate(data::WIDER_Data, state=ifelse(
         idx = 1
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
-            img, box = read_img(r, img_dir, data.bboxes[img_path], img_size)
+            img, box = read_img(data.reader, img_dir, data.bboxes[img_path], img_size)
             push!(labels, box)
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end
-        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
+        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4))) .* 255
         return (imgs_arr, labels), state[data.batch_size+1:end]
     end
 end

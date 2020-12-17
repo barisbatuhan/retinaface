@@ -10,14 +10,12 @@ Smooth L1 Loss.
     where x = gt - pred
 """
 
-function smooth_l1(x; beta=1)
-    N, I, P = size(x)
-    # x = vec(x)
+function smooth_l1(x, pos_cnts; beta=1)
     low_idx = findall(Array(x) .< beta)
     high_idx = findall(Array(x) .>= beta)
-    loss_sum = sum(x[high_idx] .- 0.5)
-    loss_sum += sum(0.5 .* (x[low_idx].^2))
-    return sum(loss_sum) / I
+    loss_sum = sum(x[high_idx] .- 0.5, dims=1)
+    loss_sum += sum(0.5 .* (x[low_idx].^2), dims=1)
+    return sum(loss_sum ./ pos_cnts)
 end
 
 

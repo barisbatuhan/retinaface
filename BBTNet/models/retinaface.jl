@@ -64,8 +64,7 @@ function RetinaFace(;dtype=Array{Float64}, load_path=nothing)
     if load_path !== nothing
         return load_model(load_path)
     else
-        backbone = ResNet50(include_top=false, dtype=dtype)
-        backbone = load_mat_weights(backbone, "./weights/imagenet-resnet-50-dag.mat")
+        backbone = load_mat_weights(ResNet50(include_top=false, dtype=dtype), "./weights/imagenet-resnet-50-dag.mat")
         return RetinaFace(
             backbone,
             FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
@@ -135,6 +134,7 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         N = size(class_vals, 1)
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
         batch_cls = convert(Array{Int64}, ones(N, size(class_vals, 2)))
+        pos_cnts = ones(N)
         
         for n in 1:size(class_vals, 1)
             # loop for each input in batch, since all inputs may have different number of boxes
@@ -153,17 +153,19 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             batch_cls[n, pos_indices] .= 1
             batch_cls[n, neg_indices] .= 2
             affected_loss += 1
+            pos_cnts[n] += length(pos_indices)
         end
         if affected_loss > 0 
             class_vals = reshape(class_vals, (size(class_vals, 3), prod(size(class_vals)[1:2])))
             batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
             loss_val += nll(class_vals, batch_cls)
-#             print("After nll: ", loss_val, "\n")
+            # print("After nll: ", loss_val, "\n")
         end
-        loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals))
-#         print("After bbox: ", loss_val, "\n")
-        loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals))
-#         print("After lm: ", loss_val, "\n")
+        pos_cnts = convert(model.dtype, pos_cnts)
+        loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
+        # print("After bbox: ", loss_val, "\n")
+        loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
+        # print("After lm: ", loss_val, "\n")
         
         if loss_val > 0
             loss_val /= affected_loss
@@ -188,7 +190,7 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         iter_no = 1
         last_loss = 0
         total_batches = size(state, 1) + size(imgs)[end]
-        curr_batch = ProgressBar(1:total_batches, width =100)
+        curr_batch = ProgressBar(1:total_batches, width=100)
         
         while state !== nothing 
             set_description(curr_batch, string(@sprintf("Epoch: %d --> ", e)))
@@ -240,10 +242,9 @@ function evaluate_model(model::RetinaFace, data_reader)
 end
 
 function load_model(file_name)
-    model_dict = load(file_name)
-    return model_dict["model"]
+    return Knet.load(file_name, "model",)
 end
 
 function save_model(model::RetinaFace, file_name)
-    @save file_name model
+    Knet.save(file_name, "model", model)
 end
