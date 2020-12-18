@@ -39,20 +39,20 @@ function read_img(r::Image_Reader, dir, boxes, len)
     end 
             
     bbox_indices = getindex.(findall(new_boxes[1,:] .>= 0)) # boxes having bboxes
-    lm_indices = getindex.(findall(new_boxes[15,:] .>= 0)) # boxes having landmarks
+#     lm_indices = getindex.(findall(new_boxes[15,:] .>= 0)) # boxes having landmarks
     
-    common_indices = []
-    diff_indices = []
-    for val in bbox_indices
-        if val in lm_indices
-            push!(common_indices, val)
-        else
-            push!(diff_indices, val)
-        end
-    end
+#     common_indices = []
+#     diff_indices = []
+#     for val in bbox_indices
+#         if val in lm_indices
+#             push!(common_indices, val)
+#         else
+#             push!(diff_indices, val)
+#         end
+#     end
     
     img -= avg_img 
-    new_boxes = new_boxes[:,common_indices]  
+    new_boxes = new_boxes[:,bbox_indices]  
     return img, new_boxes
 end
 

@@ -143,11 +143,11 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
         N = size(class_vals, 1)
+        lmN = 0; bboxN = 0;
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
         batch_cls = convert(Array{Int64}, zeros(N, size(class_vals, 2)))
-        pos_cnts = ones(N)
         
-        for n in 1:size(class_vals, 1)
+        for n in 1:N
             # loop for each input in batch, all inputs may have different box counts
             if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
                 # if the cropped image has no faces
@@ -155,31 +155,38 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             end 
             
             bboxes = Array(value(bbox_vals[n,:,:]))
-            gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)
+            gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)   
+            
+            lm_indices = findall(gt[:,15] .>= 0)
+            if size(lm_indices, 1) > 0 
+                lm_indices = getindex.(lm_indices) #getting indices where landmark points are available     
+                lmN += 1
+            end
             
             if pos_indices !== nothing 
                 # if boxes with high enough IOU are found
                 gt = convert(model.dtype, gt)
-                batch_gt[n,pos_indices,:] = gt[:,1:14] 
+                batch_gt[n,pos_indices,1:4] = gt[:,1:4] 
+                if lm_indices !== nothing # counting only the ones with landmark data
+                    batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
+                end
                 batch_cls[n, pos_indices] .= 1
                 batch_cls[n, neg_indices] .= 2
-                pos_cnts[n] = length(pos_indices)
+                bboxN += 1
             end 
         end
+        
+        bboxN = bboxN == 0 ? 1 : bboxN
+        lmN = lmN == 0 ? 1 : lmN
             
         # classification negative log likelihood loss
         class_vals = reshape(class_vals, (2, prod(size(class_vals)[1:2])))
         batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
-        loss_cls = nll(class_vals, batch_cls)
-        loss_cls /= N
-          
-        pos_cnts = convert(model.dtype, pos_cnts)
+        loss_cls = nll(class_vals, batch_cls) / bboxN
         # box regression loss
-        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
-        loss_bbox /= N
+        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
         # landmark regression loss
-        loss_lm = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
-        loss_lm /= N
+        loss_lm = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
             
         # weight decay
         if weight_decay > 0
@@ -201,7 +208,7 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
 end
 
 function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=nothing)
-    print("\n============================================= TRAINING PROCESS =============================================\n\n")
+    print("\n--> TRAINING PROCESS:\n\n")
     loss_history = []
 
     for e in 1:num_epochs

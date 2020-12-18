@@ -35,7 +35,7 @@ function nms(conf, bbox)
 end
 
 function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
-    gt ./= img_size
+    gt[:,1:14] ./= img_size
     priors = _get_priorboxes()
     decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors)
     decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end])  
@@ -172,7 +172,7 @@ Returns the anchor boxes with their center_x, center_y, width, height informatio
 function _get_priorboxes()
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
-    anchors = convert(dtype, zeros(num_proposals, 4))
+    anchors = zeros(num_proposals, 4)
 
     counter = 1
     for (idx, f) in enumerate(feature_maps)
