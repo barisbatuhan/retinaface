@@ -109,76 +109,94 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
 
     if y === nothing && train == false
         # for predicting, the founded boxes should be decoded to their real values
-        class_vals = Array(class_vals); bbox_vals = Array(bbox_vals); landmark_vals = Array(landmark_vals);
-        bbox_vals, landmark_vals = decode_points(bbox_vals, landmark_vals)
+        class_vals = Array(class_vals) 
+        bbox_vals, landmark_vals = decode_points(
+            Array(bbox_vals) , Array(landmark_vals)
+        )
         
         N = size(class_vals)[1]
         cl_results = []; bbox_results = []; landmark_results = []
         
         for n in 1:N 
+            # confidence threshold check
             indices = findall(class_vals[n,:,1] .>= conf_level)
-            push!(cl_results, class_vals[n, indices, :])
-            push!(bbox_results, bbox_vals[n, indices, :])
-            push!(landmark_results, landmark_vals[n, indices, :])
+            cl_result = class_vals[n, indices, :]
+            bbox_result = bbox_vals[n, indices, :]
+            landmark_result = landmark_vals[n, indices, :]
+            # NMS check
+            indices = nms(cl_result, bbox_result)
+            cl_result = cl_result[indices,:]
+            bbox_result = bbox_result[indices,:]
+            landmark_result = landmark_result[indices,:]
+            # pushing results
+            push!(cl_results, cl_result)
+            push!(bbox_results, bbox_result)
+            push!(landmark_results, landmark_result)
         end  
         print("Returning prediction results above confidence level: ", conf_level, ".\n")
         return  cl_results, bbox_results, landmark_results 
     
     else
         # for training, loss will be calculated and returned
-        affected_loss = 0
-        loss_val = 0
+        loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0;
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
         N = size(class_vals, 1)
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
-        batch_cls = convert(Array{Int64}, ones(N, size(class_vals, 2)))
+        batch_cls = convert(Array{Int64}, zeros(N, size(class_vals, 2)))
         pos_cnts = ones(N)
         
         for n in 1:size(class_vals, 1)
-            # loop for each input in batch, since all inputs may have different number of boxes
+            # loop for each input in batch, all inputs may have different box counts
             if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
+                # if the cropped image has no faces
                 continue 
             end 
             
             bboxes = Array(value(bbox_vals[n,:,:]))
             gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)
-            if pos_indices === nothing 
-                continue 
-            end 
             
-            gt = convert(model.dtype, gt)
-            batch_gt[n,pos_indices,:] = gt[:,1:14] 
-            batch_cls[n, pos_indices] .= 1
-            batch_cls[n, neg_indices] .= 2
-            affected_loss += 1
-            pos_cnts[n] = length(pos_indices)
+            if pos_indices !== nothing 
+                # if boxes with high enough IOU are found
+                gt = convert(model.dtype, gt)
+                batch_gt[n,pos_indices,:] = gt[:,1:14] 
+                batch_cls[n, pos_indices] .= 1
+                batch_cls[n, neg_indices] .= 2
+                pos_cnts[n] = length(pos_indices)
+            end 
         end
-        if affected_loss > 0 # if a bounding box is found with an IOU value more than threshold
-            class_vals = reshape(class_vals, (size(class_vals, 3), prod(size(class_vals)[1:2])))
-            batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
-            loss_val += nll(class_vals, batch_cls)
-            # print("After nll: ", loss_val, "\n")
-            pos_cnts = convert(model.dtype, pos_cnts)
-            loss_val += lambda1 * smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
-            # print("After bbox: ", loss_val, "\n")
-            loss_val += lambda2 * smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
-            # print("After lm: ", loss_val, "\n")
-
-            loss_val /= affected_loss
-            if weight_decay > 0
-                for p in params(model)
-                    # weight decay process
-                    if size(size(p), 1) == 4 && size(p, 4) > 1
-                        # only taking weights but not biases and moments
-                        loss_val -= weight_decay * sum(p.^2)
-                    end
+            
+        # classification negative log likelihood loss
+        class_vals = reshape(class_vals, (2, prod(size(class_vals)[1:2])))
+        batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
+        loss_cls = nll(class_vals, batch_cls)
+        loss_cls /= N
+          
+        pos_cnts = convert(model.dtype, pos_cnts)
+        # box regression loss
+        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals), pos_cnts)
+        loss_bbox /= N
+        # landmark regression loss
+        loss_lm = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals), pos_cnts)
+        loss_lm /= N
+            
+        # weight decay
+        if weight_decay > 0
+            for p in params(model)
+                if size(size(p), 1) == 4 && size(p, 4) > 1
+                    # only taking weights but not biases and moments
+                    loss_decay += weight_decay * sum(p.^2)
                 end
             end
         end
-        # print("\nFinal loss: ", loss_val, '\n')
-        return loss_val
+        print(
+            "Cls Loss: ", round.(value(loss_cls); digits=4), " | ", 
+            "Box Loss: ", round.(value(loss_bbox); digits=4), " | ", 
+            "Lm Loss: ", round.(value(loss_lm); digits=4), " | ", 
+            "Decay: ", round.(value(loss_decay); digits=4), "\n"
+        )
+        return loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
     end
 end
 
@@ -191,13 +209,12 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         iter_no = 1
         last_loss = 0
         total_batches = size(state, 1) + size(imgs)[end]
-        curr_batch = ProgressBar(1:total_batches, width=100)
+        curr_batch = size(imgs)[end]
         
         while state !== nothing 
-#             (imgs, boxes), _ = iterate(data_reader, state)
-            last_loss = model(deepcopy(imgs), deepcopy(boxes), mode, false, weight_decay)
-            set_description(curr_batch, string(@sprintf("Epoch: %d --> ", e)))
-            set_postfix(curr_batch, Loss=@sprintf("%.2f", last_loss))
+            # (imgs, boxes), _ = iterate(data_reader, state) # for running the same batch over and over
+            print("Epoch: ", e, " & Batch: ", curr_batch, "/", total_batches, " --> ")
+                
             if e < lr_change_epoch[1]
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
             elseif e < lr_change_epoch[2]
@@ -207,12 +224,16 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             else
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
+            
             (imgs, boxes), state = iterate(data_reader, state)
-            for _ in 1:size(imgs)[end] iterate(curr_batch, 1) end
+            
+            if save_dir !== nothing && mod(iter_no, 500) == 0
+                save_model(model, save_dir * "model_epoch" * string(e) * "_iter" * string(curr_batch) * ".jld2")
+            end
+            
             iter_no += 1
+            curr_batch += size(imgs)[end]
         end
-        
-        curr_batch = nothing
         
         if save_dir !== nothing
             save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")

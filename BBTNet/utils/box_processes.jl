@@ -1,16 +1,52 @@
 include("../../configs.jl")
 
-function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array{Float32})
-    priors = _get_priorboxes(dtype=dtype)
-    decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors) * img_size
+function nms(conf, bbox)
+    points = _to_min_max_form(reshape(bbox, (1, size(bbox)...)))
+    x1 = points[1,:,1]; y1 = points[1,:,2]; x2 = points[1,:,3]; y2 = points[1,:,4];
+    scores = conf[:,1]
+    
+    areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
+    order = sortperm(vec(scores), rev=true)
+    
+    keep = []
+    while size(order, 1) > 0
+        i = order[1]
+        push!(keep, i)
+        if size(order, 1) == 1 break end
+        xx1 = max.(x1[i], x1[order[2:end]])
+        yy1 = max.(y1[i], y1[order[2:end]])
+        xx2 = min.(x2[i], x2[order[2:end]])
+        yy2 = min.(y2[i], y2[order[2:end]])
+        
+        w = max.(0.0, xx2 - xx1 .+ 1)
+        h = max.(0.0, yy2 - yy1 .+ 1)
+        inter = w .* h
+        ovr = inter ./ (areas[i] .+ areas[order[2:end]] .- inter)
+        
+        inds = findall(ovr .<= nms_threshold)
+        if size(inds, 1) == 0
+            break
+        else
+            inds = getindex.(inds, [1 2])[1, 1]
+        end
+        order = order[inds+1:end]
+    end
+    return keep
+end
+
+function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
+    gt ./= img_size
+    priors = _get_priorboxes()
+    decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors)
     decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end])  
     iou_vals = iou(gt[:,1:4], decoded_bboxes) 
     
     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2) # gets max values and indices for each gt
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) # gets max values and indices for each prior
     
-    pos_indices = getindex.(max_gt_idx[findall(max_gt_vals .>= pos_thold)], [1 2])[:, 2]
-    num_pos_boxes = length(pos_indices)
+    pos_gt_indices = getindex.(findall(max_gt_vals .>= pos_thold), [1 2])[:, 2]
+    pos_prior_indices = getindex.(max_gt_idx[findall(max_gt_vals .>= pos_thold)], [1 2])[:, 2]
+    num_pos_boxes = length(pos_gt_indices)
     if num_pos_boxes == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
@@ -29,14 +65,15 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     Box_lengths     = log(gt_w / scale), log(gt_h / scale)
     Point_coords    = [(bbox_x1 - anchor_center_x) / scale], [(bbox_x2 - anchor_center_x) / scale], 
                       [(bbox_y1 - anchor_center_y) / scale], [(bbox_y2 - anchor_center_y) / scale],
-                      for each landmark {[(landmark_x - anchor_center_x) / scale], [(landmark_y - anchor_center_y) / scale]}
+                      for each landmark 
+                        {[(landmark_x - anchor_center_x) / scale], [(landmark_y - anchor_center_y) / scale]}
     
     Here, the scale is actually the width and height of the prior anchor box.
     """
   
-    selected_priors = priors[pos_indices,:]
+    selected_priors = priors[pos_prior_indices,:]
     # gt bbox conversion
-    gt ./= img_size
+    gt = gt[pos_gt_indices,:] # only positive ground truth values are included
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
     gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
@@ -46,7 +83,7 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold; dtype=Array
     gt[:,11:12] = (gt[:,11:12] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,13:14] = (gt[:,13:14] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
 
-    return gt, pos_indices, neg_indices
+    return gt, pos_prior_indices, neg_indices
 end
 
 """
@@ -132,7 +169,7 @@ end
 """
 Returns the anchor boxes with their center_x, center_y, width, height information.
 """
-function _get_priorboxes(;dtype=Array{Float64})
+function _get_priorboxes()
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
     anchors = convert(dtype, zeros(num_proposals, 4))
@@ -146,7 +183,7 @@ function _get_priorboxes(;dtype=Array{Float64})
                 for w in 1:f
                     cx = (w - 0.5) * scaler
                     cy = (h - 0.5) * scaler
-                    anchors[counter,:] = convert(dtype, [cx cy bbox_len bbox_len])
+                    anchors[counter,:] = [cx cy bbox_len bbox_len]
                     counter += 1
                 end
             end

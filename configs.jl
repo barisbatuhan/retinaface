@@ -50,7 +50,8 @@ lr_change_epoch = [5, 55, 68]
 mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
 
 # Testing Parameters
-conf_level      = 0.99999
+conf_level      = 0.85
+nms_threshold   = 0.4
 
 # Device Parameters
 run_gpu = true

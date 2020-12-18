@@ -44,7 +44,7 @@ mutable struct WIDER_Data
             bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
-        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(shuffle), dtype)
+        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), dtype)
     end
 end
 
@@ -90,7 +90,7 @@ function iterate(data::WIDER_Data, state=ifelse(
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end
-        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4))) # .* 255
+        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4))) .* 255
         return (imgs_arr, labels), state[data.batch_size+1:end]
     end
 end
