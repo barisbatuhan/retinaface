@@ -27,7 +27,8 @@ function nms(conf, bbox)
         if size(inds, 1) == 0
             break
         else
-            inds = getindex.(inds, [1 2])[1, 1]
+            inds = inds[1]
+#             inds = getindex.(inds, [1 2])[1, 1]
         end
         order = order[inds+1:end]
     end
@@ -35,10 +36,9 @@ function nms(conf, bbox)
 end
 
 function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
-    gt[:,1:14] ./= img_size
     priors = _get_priorboxes()
     decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors)
-    decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end])  
+    decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end]) .* img_size
     iou_vals = iou(gt[:,1:4], decoded_bboxes) 
     
     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2) # gets max values and indices for each gt
@@ -70,10 +70,9 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
     
     Here, the scale is actually the width and height of the prior anchor box.
     """
-  
     selected_priors = priors[pos_prior_indices,:]
     # gt bbox conversion
-    gt = gt[pos_gt_indices,:] # only positive ground truth values are included
+    gt = gt[pos_gt_indices,:] ./ img_size # only positive ground truth values are included
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
     gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
@@ -198,8 +197,8 @@ Decoder functions:
 the combination of prediction and prior anchor box style and rescaling gives the actual
 bounding box and landmark coordinations.
 """
-function decode_points(bboxes, landmarks; dtype=Array{Float64})
-    priors = _get_priorboxes(dtype=dtype)
+function decode_points(bboxes, landmarks)
+    priors = _get_priorboxes()
     decoded_bboxes = _decode_bboxes(bboxes, priors)
     decoded_bboxes .*= img_size
     decoded_landmarks = _decode_landmarks(landmarks, priors)

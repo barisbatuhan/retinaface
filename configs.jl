@@ -15,6 +15,9 @@ save_dir        = "./weights/"
 load_path       = "./weights/model_best.jld2"
 r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
 
+# Extra Paths
+log_dir         = "./log_msgs.txt"
+
 # Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
@@ -50,8 +53,8 @@ lr_change_epoch = [5, 55, 68]
 mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
 
 # Testing Parameters
-conf_level      = 0.85
-nms_threshold   = 0.4
+conf_level      = 0.95
+nms_threshold   = 0.2
 
 # Device Parameters
 run_gpu = true

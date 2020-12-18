@@ -81,7 +81,6 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     # first processes
     c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
     p_vals = model.fpn([c2, c3, c4, c5], train=train)
-    # print("Passed backbone and FPN structures.\n")  
     
     class_vals = nothing; bbox_vals = nothing; landmark_vals = nothing; 
     if mode == 1
@@ -105,14 +104,11 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         bbox_vals = model.bbox_conv2(p_vals, train=train)
         landmark_vals = model.landmark_conv2(p_vals, train=train)
     end
-    # print("Passed Context Head structures.\n")
 
     if y === nothing && train == false
         # for predicting, the founded boxes should be decoded to their real values
         class_vals = Array(class_vals) 
-        bbox_vals, landmark_vals = decode_points(
-            Array(bbox_vals) , Array(landmark_vals)
-        )
+        bbox_vals, landmark_vals = decode_points(Array(bbox_vals) , Array(landmark_vals))
         
         N = size(class_vals)[1]
         cl_results = []; bbox_results = []; landmark_results = []
@@ -133,56 +129,59 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             push!(bbox_results, bbox_result)
             push!(landmark_results, landmark_result)
         end  
-        print("Returning prediction results above confidence level: ", conf_level, ".\n")
+        print("[INFO] Returning prediction results above confidence level: ", conf_level, ".\n")
         return  cl_results, bbox_results, landmark_results 
     
     else
         # for training, loss will be calculated and returned
         loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0;
+        lmN = 0; bboxN = 0; clsN = 0;
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
         N = size(class_vals, 1)
-        lmN = 0; bboxN = 0;
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
         batch_cls = convert(Array{Int64}, zeros(N, size(class_vals, 2)))
         
-        for n in 1:N
-            # loop for each input in batch, all inputs may have different box counts
+        for n in 1:N # loop for each input in batch, all inputs may have different box counts
             if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
                 # if the cropped image has no faces
                 continue 
             end 
             
             bboxes = Array(value(bbox_vals[n,:,:]))
-            gt, pos_indices, neg_indices = encode_gt_and_get_indices(permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)   
-            
-            lm_indices = findall(gt[:,15] .>= 0)
-            if size(lm_indices, 1) > 0 
-                lm_indices = getindex.(lm_indices) #getting indices where landmark points are available     
-                lmN += 1
-            end
+            gt, pos_indices, neg_indices = encode_gt_and_get_indices(
+                permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)   
             
             if pos_indices !== nothing 
+                lm_indices = findall(gt[:,15] .>= 0)
+                if size(lm_indices, 1) > 0 
+                    # getting indices where landmark points are available     
+                    lm_indices = getindex.(lm_indices)
+                    lmN += size(lm_indices, 1) # * 5
+                end
                 # if boxes with high enough IOU are found
                 gt = convert(model.dtype, gt)
                 batch_gt[n,pos_indices,1:4] = gt[:,1:4] 
-                if lm_indices !== nothing # counting only the ones with landmark data
+                if lm_indices !== nothing 
+                    # counting only the ones with landmark data
                     batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
                 end
                 batch_cls[n, pos_indices] .= 1
                 batch_cls[n, neg_indices] .= 2
-                bboxN += 1
+                bboxN += size(pos_indices, 1) # * 2
+                clsN += size(pos_indices, 1) + size(neg_indices, 1)
             end 
         end
         
+        clsN = clsN == 0 ? 1 : clsN
         bboxN = bboxN == 0 ? 1 : bboxN
         lmN = lmN == 0 ? 1 : lmN
             
         # classification negative log likelihood loss
         class_vals = reshape(class_vals, (2, prod(size(class_vals)[1:2])))
         batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
-        loss_cls = nll(class_vals, batch_cls) / bboxN
+        loss_cls = nll(class_vals, batch_cls)
         # box regression loss
         loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
         # landmark regression loss
@@ -197,19 +196,23 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
                 end
             end
         end
-        print(
-            "Cls Loss: ", round.(value(loss_cls); digits=4), " | ", 
-            "Box Loss: ", round.(value(loss_bbox); digits=4), " | ", 
-            "Lm Loss: ", round.(value(loss_lm); digits=4), " | ", 
-            "Decay: ", round.(value(loss_decay); digits=4), "\n"
-        )
-        return loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
+        
+        total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
+        
+        to_print =  "Total Loss: " * string(round.(value(total_loss); digits=3)) * " | " 
+        to_print *= "Cls Loss: " * string(round.(value(loss_cls); digits=3)) * " | " 
+        to_print *= "Box Loss: " * string(round.(value(loss_bbox); digits=3)) * " | " 
+        to_print *= "Lm Loss: " * string(round.(value(loss_lm); digits=3)) * " | " 
+        to_print *= "Decay: " * string(round.(value(loss_decay); digits=3)) * "\n"
+        print(to_print)
+        open(log_dir, "a") do io write(io, to_print) end;
+        return total_loss
     end
 end
 
 function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=nothing)
     print("\n--> TRAINING PROCESS:\n\n")
-    loss_history = []
+    open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n\n") end;
 
     for e in 1:num_epochs
         (imgs, boxes), state = iterate(data_reader)
@@ -220,7 +223,9 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         
         while state !== nothing 
             # (imgs, boxes), _ = iterate(data_reader, state) # for running the same batch over and over
-            print("Epoch: ", e, " & Batch: ", curr_batch, "/", total_batches, " --> ")
+            to_print =  "Epoch: " * string(e) * " & Batch: " * string(curr_batch) * "/" * string(total_batches) * " --> "
+            print(to_print)
+            open(log_dir, "a") do io write(io, to_print) end;
                 
             if e < lr_change_epoch[1]
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
@@ -234,7 +239,7 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             
             (imgs, boxes), state = iterate(data_reader, state)
             
-            if save_dir !== nothing && mod(iter_no, 500) == 0
+            if save_dir !== nothing && mod(iter_no, 1510) == 0
                 save_model(model, save_dir * "model_epoch" * string(e) * "_iter" * string(curr_batch) * ".jld2")
             end
             
@@ -258,7 +263,6 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
 #         end
 #         print("\n")
     end
-#     return loss_history
 end
 
 function evaluate_model(model::RetinaFace, data_reader)
