@@ -1,4 +1,5 @@
 include("layers.jl")
+include("initializers.jl")
 
 """
 A custom constructor for Conv2D + BatchNorm + Activation layer
@@ -15,7 +16,7 @@ A custom constructor for Conv2D + BatchNorm + Activation layer
 """
 mutable struct ConvBn conv; bn; f; alpha; end
 
-function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, alpha=0, 
+function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=kaiming_uniform, f=nothing, alpha=0, 
     pdrop=0, bias=true, padding=0, stride=1, dilation=1, dtype=Array{Float32}, momentum=0.1)
     return ConvBn(
         Conv2D(w1, w2, input_dim, output_dim, pdrop=pdrop, dtype=dtype, init=init,
@@ -39,7 +40,7 @@ Network with more than 50 layers.
 """
 mutable struct Residual_1x3x1  downsample; conv_bn1; conv_bn2; conv_bn3; dtype; end
 
-function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1, init=xavier_uniform,
+function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride=1, init=kaiming_uniform,
                         bias=false, pdrop=0, dtype=Array{Float32})
     ds_layer = nothing
     if downsample

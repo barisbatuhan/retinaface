@@ -1,40 +1,5 @@
 include("../../configs.jl")
 
-function nms(conf, bbox)
-    points = _to_min_max_form(reshape(bbox, (1, size(bbox)...)))
-    x1 = points[1,:,1]; y1 = points[1,:,2]; x2 = points[1,:,3]; y2 = points[1,:,4];
-    scores = conf[:,1]
-    
-    areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
-    order = sortperm(vec(scores), rev=true)
-    
-    keep = []
-    while size(order, 1) > 0
-        i = order[1]
-        push!(keep, i)
-        if size(order, 1) == 1 break end
-        xx1 = max.(x1[i], x1[order[2:end]])
-        yy1 = max.(y1[i], y1[order[2:end]])
-        xx2 = min.(x2[i], x2[order[2:end]])
-        yy2 = min.(y2[i], y2[order[2:end]])
-        
-        w = max.(0.0, xx2 - xx1 .+ 1)
-        h = max.(0.0, yy2 - yy1 .+ 1)
-        inter = w .* h
-        ovr = inter ./ (areas[i] .+ areas[order[2:end]] .- inter)
-        
-        inds = findall(ovr .<= nms_threshold)
-        if size(inds, 1) == 0
-            break
-        else
-            inds = inds[1]
-#             inds = getindex.(inds, [1 2])[1, 1]
-        end
-        order = order[inds+1:end]
-    end
-    return keep
-end
-
 function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
     priors = _get_priorboxes()
     decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors)
@@ -91,6 +56,38 @@ The parts below are mostly adapted from:
 * https://github.com/Hakuyume/chainer-ssd
 """
 
+function nms(conf, bbox)
+    points = _to_min_max_form(bbox)
+    x1 = points[:,1]; y1 = points[:,2]; x2 = points[:,3]; y2 = points[:,4];
+    scores = conf[:,1]
+    
+    areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
+    order = sortperm(vec(scores), rev=true)
+    
+    keep = []
+    while size(order, 1) > 0
+        i = order[1]
+        push!(keep, i)
+        if size(order, 1) == 1 break end
+        xx1 = max.(x1[i], x1[order[2:end]])
+        yy1 = max.(y1[i], y1[order[2:end]])
+        xx2 = min.(x2[i], x2[order[2:end]])
+        yy2 = min.(y2[i], y2[order[2:end]])
+        
+        w = max.(0.0, xx2 - xx1 .+ 1)
+        h = max.(0.0, yy2 - yy1 .+ 1)
+        inter = w .* h
+        ovr = inter ./ (areas[i] .+ areas[order[2:end]] .- inter)
+        
+        inds = findall(ovr .<= nms_threshold)
+        if size(inds, 1) == 0 break
+        else inds = inds[1]
+        end
+        order = order[inds+1:end]
+    end
+    return keep
+end
+
 """
 !!! Each individual box in boxes has the format (x_min, y_min, x_max, y_max) !!!
 Returns intersection of unions for combination of each boxes in both parameters.
@@ -100,44 +97,12 @@ B   : number of boxes in boxes2
 Return: iou values with shape (A, B)
 """
 function iou(boxes1, boxes2)
-    A, C = size(boxes1); B, D = size(boxes2)
-    intersections = _get_intersections(boxes1, boxes2)
-    
+    A, C = size(boxes1); B, D = size(boxes2);
     area1 = (boxes1[:,4] .- boxes1[:,2]) .* (boxes1[:,3] .- boxes1[:,1])
-    area2 = (boxes2[:,4] .- boxes2[:,2]) .* (boxes2[:,3] .- boxes2[:,1])
-
-    area1 = repeat(reshape(area1, (A, 1)), outer=(1, B))
-    area2 = repeat(reshape(area2, (1, B)), outer=(A, 1))
-    
-    unions = area1 .+ area2 .- intersections
+    area2 = (boxes2[:,4] .- boxes2[:,2]) .* (boxes2[:,3] .- boxes2[:,1]) 
+    intersections = _get_intersections(boxes1, boxes2) 
+    unions = reshape(area1, (A, 1)) .+ reshape(area2, (1, B)) .- intersections
     return intersections ./ unions
-end
-
-"""
-Conversion from: 
-(center_x, center_y, width, height) --> (min_x, min_y, max_x, max_y)
-If the start of a box is negative or bigger than the image size, then 
-it is set to either 0 or image size.
-"""
-function _to_min_max_form(boxes)
-    if size(size(boxes), 1) == 3
-        half_lens = boxes[:,:,3:4] ./ 2
-        return cat(max.(boxes[:,:,1:2] .- half_lens, 0), min.(boxes[:,:,1:2] .+ half_lens, img_size), dims=3)
-    elseif size(size(boxes), 1) == 2
-        half_lens = boxes[:,3:4] ./ 2
-        return cat(max.(boxes[:,1:2] .- half_lens, 0), min.(boxes[:,1:2] .+ half_lens, img_size), dims=2)
-    else
-        print("[ERROR] From Center to Min-Max point conversion for a box dimension ", size(size(boxes), 1), " is not supported!\n")
-    end
-end
-
-"""
-Conversion from: 
-(min_x, min_y, max_x, max_y) --> (center_x, center_y, width, height)
-"""
-function _to_center_length_form(boxes)
-    lengths = boxes[:,3:4] .- boxes[:,1:2]
-    return cat(boxes[:,1:2] .+ (lengths ./ 2), lengths, dims=2)
 end
 
 """
@@ -150,20 +115,35 @@ Then we compute the area of intersect between box_a and box_b.
 Return: intersection area with shape (A, B)
 """
 function _get_intersections(boxes1, boxes2)
-    A, C = size(boxes1)
-    B, D = size(boxes2)
-    
-    b1_mins = repeat(reshape(boxes1[:, 1:2], (A, 1, 2)), outer=(1, B, 1))
-    b2_mins = repeat(reshape(boxes2[:, 1:2], (1, B, 2)), outer=(A, 1, 1))
-    min_coords = min.(b1_mins, b2_mins)
-    
-    b1_maxs = repeat(reshape(boxes1[:, 3:4], (A, 1, 2)), outer=(1, B, 1))
-    b2_maxs = repeat(reshape(boxes2[:, 3:4], (1, B, 2)), outer=(A, 1, 1))
-    max_coords = max.(b1_maxs, b2_maxs)
-    
+    A, C = size(boxes1); B, D = size(boxes2); 
+    min_coords = max.(reshape(boxes1[:, 1:2], (A, 1, 2)), reshape(boxes2[:, 1:2], (1, B, 2)))
+    max_coords = min.(reshape(boxes1[:, 3:4], (A, 1, 2)), reshape(boxes2[:, 3:4], (1, B, 2)))  
     intersections = max.(max_coords .- min_coords, 0)
     return intersections[:,:,1] .* intersections[:,:,2]
 end
+
+"""
+Conversion from: 
+(center_x, center_y, width, height) --> (min_x, min_y, max_x, max_y)
+"""
+function _to_min_max_form(boxes)
+    init_shape = size(boxes)
+    boxes = reshape(boxes, (prod(size(boxes)[1:end-1]), size(boxes)[end])) # converting to 2D
+    half_lens = boxes[:,3:4] ./ 2
+    return reshape(cat(boxes[:,1:2] .- half_lens, boxes[:,1:2] .+ half_lens, dims=2), init_shape)
+end
+
+"""
+Conversion from: 
+(min_x, min_y, max_x, max_y) --> (center_x, center_y, width, height)
+"""
+function _to_center_length_form(boxes)
+    init_shape = size(boxes)
+    boxes = reshape(boxes, (prod(size(boxes)[1:end-1]), size(boxes)[end])) # converting to 2D
+    lengths = boxes[:,3:4] .- boxes[:,1:2]
+    return reshape(cat(boxes[:,1:2] .+ (lengths ./ 2), lengths, dims=2), init_shape)
+end
+
 
 """
 Returns the anchor boxes with their center_x, center_y, width, height information.

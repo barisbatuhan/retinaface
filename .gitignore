@@ -16,3 +16,4 @@ venv/*
 *.sh
 *.log
 *log.txt
+*.txt

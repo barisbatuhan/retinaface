@@ -12,9 +12,9 @@ function FPN(;in_size=2048, dtype=Array{Float64})
         ConvBn(1, 1, 512, 256, f=relu, bias=false, dtype=dtype),
         ConvBn(1, 1, 1024, 256, f=relu, bias=false, dtype=dtype),
         ConvBn(1, 1, 2048, 256, f=relu, bias=false, dtype=dtype),
-        ConvBn(3, 3, 256, 256, f=relu, padding=1, bias=false, dtype=dtype),
-        ConvBn(3, 3, 256, 256, f=relu, padding=1, bias=false, dtype=dtype),
-        ConvBn(3, 3, 256, 256, f=relu, padding=1, bias=false, dtype=dtype),
+        ConvBn(3, 3, 256, 256, f=relu, bias=false, dtype=dtype, padding=1),
+        ConvBn(3, 3, 256, 256, f=relu, bias=false, dtype=dtype, padding=1),
+        ConvBn(3, 3, 256, 256, f=relu, bias=false, dtype=dtype, padding=1),
     )
 end
 

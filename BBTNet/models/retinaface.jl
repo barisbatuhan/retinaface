@@ -114,11 +114,16 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         cl_results = []; bbox_results = []; landmark_results = []
         
         for n in 1:N 
+            
+            bbox_vals[findall(bbox_vals .< 0)] .= 0
+            bbox_vals[findall(bbox_vals .> img_size)] .= img_size
+            
             # confidence threshold check
             indices = findall(class_vals[n,:,1] .>= conf_level)
             cl_result = class_vals[n, indices, :]
             bbox_result = bbox_vals[n, indices, :]
             landmark_result = landmark_vals[n, indices, :]
+        
             # NMS check
             indices = nms(cl_result, bbox_result)
             cl_result = cl_result[indices,:]
@@ -197,15 +202,20 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             end
         end
         
+        loss_cls = loss_cls === NaN ? 0 : loss_cls  
         total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
         
-        to_print =  "Total Loss: " * string(round.(value(total_loss); digits=3)) * " | " 
-        to_print *= "Cls Loss: " * string(round.(value(loss_cls); digits=3)) * " | " 
-        to_print *= "Box Loss: " * string(round.(value(loss_bbox); digits=3)) * " | " 
-        to_print *= "Lm Loss: " * string(round.(value(loss_lm); digits=3)) * " | " 
+        to_print =  "Total Loss: " * string(round.(value(total_loss); digits=3)) * " \t|\t " 
+        to_print *= "Cls Loss: " * string(round.(value(loss_cls); digits=3)) * " \t|\t " 
+        to_print *= "Box Loss: " * string(round.(value(loss_bbox); digits=3)) * " \t|\t " 
+        to_print *= "Lm Loss: " * string(round.(value(loss_lm); digits=3)) * " \t|\t " 
         to_print *= "Decay: " * string(round.(value(loss_decay); digits=3)) * "\n"
-        print(to_print)
-        open(log_dir, "a") do io write(io, to_print) end;
+        
+        
+        if total_loss > 0
+            print(to_print)
+            open(log_dir, "a") do io write(io, to_print) end;
+        end
         return total_loss
     end
 end
@@ -214,7 +224,7 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
     print("\n--> TRAINING PROCESS:\n\n")
     open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n\n") end;
 
-    for e in 1:num_epochs
+    for e in start_epoch:num_epochs
         (imgs, boxes), state = iterate(data_reader)
         iter_no = 1
         last_loss = 0
@@ -222,11 +232,14 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         curr_batch = size(imgs)[end]
         
         while state !== nothing 
-            # (imgs, boxes), _ = iterate(data_reader, state) # for running the same batch over and over
-            to_print =  "Epoch: " * string(e) * " & Batch: " * string(curr_batch) * "/" * string(total_batches) * " --> "
-            print(to_print)
-            open(log_dir, "a") do io write(io, to_print) end;
-                
+            # (imgs, boxes), _ = iterate(data_reader, state) # for running the same batch over and over        
+            
+            if mod(iter_no, Int(50 / size(imgs)[end])) == 1
+                to_print =  "--- Epoch: " * string(e) * " & Batch: " * string(curr_batch) * "/" * string(total_batches) * "\n"
+                print(to_print)
+                open(log_dir, "a") do io write(io, to_print) end;
+            end
+            
             if e < lr_change_epoch[1]
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
             elseif e < lr_change_epoch[2]
@@ -236,19 +249,20 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             else
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
             end
-            
-            (imgs, boxes), state = iterate(data_reader, state)
-            
-            if save_dir !== nothing && mod(iter_no, 1510) == 0
-                save_model(model, save_dir * "model_epoch" * string(e) * "_iter" * string(curr_batch) * ".jld2")
+           
+            if !(length(state) == 0 || state === nothing)
+                (imgs, boxes), state = iterate(data_reader, state)
+                iter_no += 1
+                curr_batch += size(imgs)[end]
+                if save_dir !== nothing && mod(iter_no, 644) == 0
+                    save_model(model, save_dir * "model_epoch" * string(e) * "_iter" * string(curr_batch) * ".jld2")    
+                end   
+            else
+                if save_dir !== nothing 
+                    save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
+                end
+                break
             end
-            
-            iter_no += 1
-            curr_batch += size(imgs)[end]
-        end
-        
-        if save_dir !== nothing
-            save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
         end
         
         # Evaluate both training and val data after each epoch.

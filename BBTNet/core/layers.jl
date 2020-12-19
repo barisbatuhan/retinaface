@@ -1,5 +1,7 @@
 using Knet
 
+include("initializers.jl")
+
 """
 A classic fully connected layer.
     w   : Weight matrix
@@ -16,7 +18,7 @@ A custom constructor for Dense
     f       : Activation function
     pdrop   : Dropout ratio
 """
-function Dense(i::Int, o::Int; init=xavier_uniform, f=nothing, pdrop=0, dtype=Array{Float32}, bias=true) 
+function Dense(i::Int, o::Int; init=xavier, f=nothing, pdrop=0, dtype=Array{Float32}, bias=true) 
     b = convert(dtype, zeros(o, 1))
     if bias b = Param(b) end
     return Dense(Param(convert(dtype, init(o, i))), b, f, pdrop)
@@ -57,7 +59,7 @@ A custom constructor for Conv2D
     dilation    : Dilation size
 """
 function Conv2D(
-    w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=xavier_uniform, f=nothing, 
+    w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=kaiming_uniform, f=nothing, 
     pdrop=0, padding=0, stride=1, dilation=1, bias=true, dtype=Array{Float32}
     ) 
     b = convert(dtype, zeros(1, 1, output_dim, 1))

@@ -11,12 +11,13 @@ fddb_path       = "/datasets/fddb/"
 aflw_path       = "/datasets/aflw/"
 
 # Weight Paths
-save_dir        = "./weights/"
-load_path       = "./weights/model_best.jld2"
 r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
+save_dir        = "./weights/"
+# load_path       = "./weights/model_epoch1.jld2"
+load_path       = nothing
 
 # Extra Paths
-log_dir         = "./log_msgs.txt"
+log_dir         = "./log_msgs1.txt"
 
 # Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
@@ -44,17 +45,18 @@ lambda1         = 1
 lambda2         = 1
 
 # Training Parameters
-batch_size      = 4
+batch_size      = 10
 num_epochs      = 80
-weight_decay    = 0.0005
+weight_decay    = 0.0 #005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
 lr_change_epoch = [5, 55, 68]
 mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
+start_epoch     = 2
 
 # Testing Parameters
-conf_level      = 0.95
-nms_threshold   = 0.2
+conf_level      = 0.99
+nms_threshold   = 0.4
 
 # Device Parameters
 run_gpu = true
