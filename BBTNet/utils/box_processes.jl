@@ -8,12 +8,12 @@ function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
     # gets max values and indices for each prior
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) 
     
-    # selecting positive prior boxes
-    pos_gt_indices = getindex.(findall(max_gt_vals .>= pos_thold), [1 2])[:, 2]
+    # selecting positive prior boxes  
     pos_selected = findall(max_gt_vals .>= pos_thold)
+    pos_gt_indices = getindex.(pos_selected, [1 2])[:, 1]
     pos_prior_indices = getindex.(max_gt_idx[pos_selected], [1 2])[:, 2]
-    num_poses = length(pos_gt_indices)
     
+    num_poses = length(pos_gt_indices)
     if num_poses == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
@@ -23,7 +23,7 @@ function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
     neg_indices = findall(ohem_neg_iou .<= max_prior_vals .<= neg_thold)
     num_negs = size(neg_indices)[1]
     rand_neg = vec(neg_indices)[randperm(num_negs)][1:ohem_ratio * num_poses]
-    neg_indices = getindex.(max_prior_idx[rand_neg], [1 2])[:, 1]
+    neg_indices = getindex.(max_prior_idx[rand_neg], [1 2])[:, 2]
 
     # gt bbox conversion
     selected_priors = priors[pos_prior_indices,:]

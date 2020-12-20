@@ -127,17 +127,19 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             cl_result = class_vals[n, indices, :]
             bbox_result = bbox_vals[n, indices, :]
             landmark_result = landmark_vals[n, indices, :]
-        
+            
             # NMS check
             indices = nms(cl_result, bbox_result)
             cl_result = cl_result[indices,:]
             bbox_result = bbox_result[indices,:]
             landmark_result = landmark_result[indices,:]
+            
             # pushing results
             push!(cl_results, cl_result)
             push!(bbox_results, bbox_result)
             push!(landmark_results, landmark_result)
         end  
+        
         print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
         return  cl_results, bbox_results, landmark_results 
     
@@ -162,25 +164,22 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
                 permutedims(y[n],(2, 1)), pos_thold, neg_thold)   
             
             if pos_indices !== nothing 
+                # if boxes with high enough IOU are found                
                 lm_indices = findall(gt[:,15] .>= 0)
+                gt = convert(model.dtype, gt)
+                
                 if size(lm_indices, 1) > 0 
-                    # getting indices where landmark points are available     
+                    # counting only the ones with landmark data 
                     lm_indices = getindex.(lm_indices)
+                    batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
                     lmN += size(lm_indices, 1)
                 end
-                # if boxes with high enough IOU are found
-                gt = convert(model.dtype, gt)
-                batch_gt[n,pos_indices,1:4] = gt[:,1:4]
                 
-                if lm_indices !== nothing 
-                    # counting only the ones with landmark data
-                    batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
-                end
-                
+                batch_gt[n,pos_indices,1:4] = gt[:,1:4]             
                 batch_cls[n, pos_indices, 1] .= 1; batch_cls[n, neg_indices, 2] .= 1; 
                 
                 bboxN += size(pos_indices, 1) 
-                clsN += size(pos_indices, 1) # + size(neg_indices, 1)
+                clsN += size(pos_indices, 1) + size(neg_indices, 1)
             end 
         end
         
@@ -192,10 +191,9 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         # classification negative log loss
         loss_cls  = sum(-1 .* log.(class_vals .* batch_cls .+ 1 .- batch_cls)) / clsN
         # regression loss of the box centers, width and height
-        loss_bbox = smooth_l1(abs.(batch_gt[:,:,3:4] .- bbox_vals[:,:,3:4])) / bboxN
+        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
         # box center and all landmark points regression loss per point
-        loss_pts  = smooth_l1(abs.(batch_gt[:,:,1:2] .- bbox_vals[:,:,1:2])) / bboxN
-        loss_pts += smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / (5 * lmN)
+        loss_pts += smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
 
         # weight decay
         if weight_decay > 0

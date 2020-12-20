@@ -48,7 +48,7 @@ lambda2         = 1
 # Training Parameters
 batch_size      = 10
 num_epochs      = 80
-weight_decay    = 0.0005
+weight_decay    = 0.0 # 005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
 lr_change_epoch = [5, 55, 68]
