@@ -41,6 +41,7 @@ head1_neg_iou   = 0.3
 head2_pos_iou   = 0.5
 head2_neg_iou   = 0.4
 ohem_ratio      = 3
+ohem_neg_iou    = 0.1
 lambda1         = 1
 lambda2         = 1
 

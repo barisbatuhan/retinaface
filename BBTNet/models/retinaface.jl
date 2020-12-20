@@ -1,4 +1,3 @@
-using ProgressBars, Printf
 using JLD2
 using FileIO
 
@@ -39,9 +38,9 @@ function (hg::HeadGetter)(xs; train=true)
         proposal = reshape(proposal, (batch_size, num_proposals, hg.task_len))
         push!(proposals, proposal)
     end
-    if hg.task_len == 2 && train == false 
+    if hg.task_len == 2
         return softmax(cat(proposals..., dims=2), dims=3)
-    else 
+    else
         return cat(proposals..., dims=2)
     end
 end
@@ -145,18 +144,18 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     else
         # for training, loss will be calculated and returned
         loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0;
-        lmN = 0; bboxN = 0;
+        clsN = 0; lmN = 0; bboxN = 0;
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
-        N = size(class_vals, 1)
+        N = size(class_vals, 1)       
+        # helper parameters for calculating losses
+        batch_cls = convert(model.dtype, zeros(size(class_vals)...))
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
-        batch_cls = convert(Array{Int64}, zeros(N, size(class_vals, 2)))
         
         for n in 1:N # loop for each input in batch, all inputs may have different box counts
             if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
-                # if the cropped image has no faces
-                continue 
+                continue # if the cropped image has no faces
             end 
             
             gt, pos_indices, neg_indices = encode_gt_and_get_indices(
@@ -167,33 +166,37 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
                 if size(lm_indices, 1) > 0 
                     # getting indices where landmark points are available     
                     lm_indices = getindex.(lm_indices)
-                    lmN += size(lm_indices, 1) # * 5
+                    lmN += size(lm_indices, 1)
                 end
                 # if boxes with high enough IOU are found
                 gt = convert(model.dtype, gt)
-                batch_gt[n,pos_indices,1:4] = gt[:,1:4] 
+                batch_gt[n,pos_indices,1:4] = gt[:,1:4]
+                
                 if lm_indices !== nothing 
                     # counting only the ones with landmark data
                     batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
                 end
-                batch_cls[n, pos_indices] .= 1
-                batch_cls[n, neg_indices] .= 2
-                bboxN += size(pos_indices, 1) # * 2
+                
+                batch_cls[n, pos_indices, 1] .= 1; batch_cls[n, neg_indices, 2] .= 1; 
+                
+                bboxN += size(pos_indices, 1) 
+                clsN += size(pos_indices, 1) # + size(neg_indices, 1)
             end 
         end
         
+        # in case no boxes are matched in the whole batch
+        clsN = clsN == 0 ? 1 : clsN
         bboxN = bboxN == 0 ? 1 : bboxN
         lmN = lmN == 0 ? 1 : lmN
             
-        # classification negative log likelihood loss
-        class_vals = reshape(class_vals, (2, prod(size(class_vals)[1:2])))
-        batch_cls = reshape(batch_cls, (1, prod(size(batch_cls))))
-        loss_cls = nll(class_vals, batch_cls)
-        # box regression loss
-        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
-        # landmark regression loss
-        loss_lm = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
-            
+        # classification negative log loss
+        loss_cls  = sum(-1 .* log.(class_vals .* batch_cls .+ 1 .- batch_cls)) / clsN
+        # regression loss of the box centers, width and height
+        loss_bbox = smooth_l1(abs.(batch_gt[:,:,3:4] .- bbox_vals[:,:,3:4])) / bboxN
+        # box center and all landmark points regression loss per point
+        loss_pts  = smooth_l1(abs.(batch_gt[:,:,1:2] .- bbox_vals[:,:,1:2])) / bboxN
+        loss_pts += smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / (5 * lmN)
+
         # weight decay
         if weight_decay > 0
             for p in params(model)
@@ -205,12 +208,11 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         end
         
         loss_cls = loss_cls === NaN ? 0 : loss_cls  
-        total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
-        
-        to_print = get_losses_string(
-            total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
+        total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts - loss_decay
         
         if total_loss > 0
+            to_print = get_losses_string(
+                total_loss, loss_cls, loss_bbox, loss_pts, loss_decay)
             print(to_print)
             open(log_dir, "a") do io write(io, to_print) end;
         end
@@ -218,12 +220,10 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     end
 end
 
-function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=nothing)
-    print("\n--> TRAINING PROCESS:\n\n")
-    open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n\n") end;
-
+function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothing)
+    open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n") end;
     for e in start_epoch:num_epochs
-        (imgs, boxes), state = iterate(data_reader)
+        (imgs, boxes), state = iterate(reader)
         iter_no = 1
         last_loss = 0
         total_batches = size(state, 1) + size(imgs)[end]
@@ -256,31 +256,19 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
             end
            
             if !(length(state) == 0 || state === nothing)
-                (imgs, boxes), state = iterate(data_reader, state)
+                (imgs, boxes), state = iterate(reader, state)
                 iter_no += 1
                 curr_batch += size(imgs)[end]
                 if save_dir !== nothing && mod(iter_no, 644) == 0
-                    save_model(model, save_dir * "model_epoch" * string(e) * "_iter" * string(curr_batch) * ".jld2")    
+                    save_model(model, save_dir * "model_" * string(e) * "_" * string(curr_batch) * ".jld2")    
                 end   
             else
                 if save_dir !== nothing 
-                    save_model(model, save_dir * "model_epoch" * string(e) * ".jld2")
+                    save_model(model, save_dir * "model_" * string(e) * ".jld2")
                 end
                 break
             end
         end
-        
-        # Evaluate both training and val data after each epoch.
-#         train_loss = evaluate_model(model, data_reader)
-#         print("\nEpoch: ", e, " ---> Train Loss: ", train_loss)
-#         if val_data !== nothing
-#             val_loss = evaluate_model(model, val_data)
-#             push!(loss_history, (train_loss, val_loss))
-#             print(" || Validation Loss: ", val_loss)
-#         else
-#             push!(loss_history, train_loss)
-#         end
-#         print("\n")
     end
 end
 
@@ -312,7 +300,7 @@ function get_losses_string(total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
     decay = string(round.(value(loss_decay); digits=3))
     
     if length(total) < 8 total *= "0"^(8-length(total)) end
-    if length(cls) < 6 cls *= "0"^(6-length(cls)) end
+    if length(cls) < 8 cls *= "0"^(8-length(cls)) end
     if length(bbox) < 8 bbox *= "0"^(8-length(bbox)) end
     if length(lm) < 8 lm *= "0"^(8-length(lm)) end
     if length(decay) < 6 decay *= "0"^(6-length(decay)) end    
@@ -320,7 +308,7 @@ function get_losses_string(total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
     to_print  = "Total Loss: " *  total * " | " 
     to_print *= "Cls Loss: "   * cls    * " | " 
     to_print *= "Box Loss: "   * bbox   * " | " 
-    to_print *= "Lm Loss: "    * lm     * " | " 
+    to_print *= "Point Loss: " * lm     * " | " 
     to_print *= "Decay: "      * decay  * "\n"
     return to_print
 end

@@ -2,46 +2,43 @@ include("../../configs.jl")
 
 function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
     priors = _get_priorboxes()
-    gt ./= img_size
-    
     iou_vals = iou(gt[:,1:4], _to_min_max_form(priors))
     # gets max values and indices for each gt
     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2)
     # gets max values and indices for each prior
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) 
     
+    # selecting positive prior boxes
     pos_gt_indices = getindex.(findall(max_gt_vals .>= pos_thold), [1 2])[:, 2]
     pos_selected = findall(max_gt_vals .>= pos_thold)
     pos_prior_indices = getindex.(max_gt_idx[pos_selected], [1 2])[:, 2]
+    num_poses = length(pos_gt_indices)
     
-    num_pos_boxes = length(pos_gt_indices)
-    if num_pos_boxes == 0 
+    if num_poses == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
-    end 
-    
-    neg_indices = max_prior_idx[findall(max_prior_vals .<= neg_thold)]
-    if size(neg_indices)[1] > (ohem_ratio * num_pos_boxes)
-        # select the most negative ohem_ratio * num_pos_boxes many boxes
-        most_neg = sortperm(vec(max_prior_vals))[1:ohem_ratio * num_pos_boxes]
-        neg_indices = getindex.(max_prior_idx[most_neg], [1 2])[:, 1]
-    else
-        neg_indices = getindex.(neg_indices, [1 2])[:, 1]
     end
-                    
-    selected_priors = priors[pos_prior_indices,:]
+    
+    #selecting negative prior boxes
+    neg_indices = findall(ohem_neg_iou .<= max_prior_vals .<= neg_thold)
+    num_negs = size(neg_indices)[1]
+    rand_neg = vec(neg_indices)[randperm(num_negs)][1:ohem_ratio * num_poses]
+    neg_indices = getindex.(max_prior_idx[rand_neg], [1 2])[:, 1]
+
     # gt bbox conversion
+    selected_priors = priors[pos_prior_indices,:]
     gt = gt[pos_gt_indices,:] # only positive ground truth values are included
     
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
+    
     gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,5:6] = (gt[:,5:6] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,7:8] = (gt[:,7:8] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,9:10] = (gt[:,9:10] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,11:12] = (gt[:,11:12] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
     gt[:,13:14] = (gt[:,13:14] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
-
+    
     return gt, pos_prior_indices, neg_indices
 end
 
@@ -152,9 +149,9 @@ function _get_priorboxes()
 
     counter = 1
     for (idx, f) in enumerate(feature_maps)
-        scaler = anchor_info[idx]["stride"] / img_size
+        scaler = anchor_info[idx]["stride"]
         for s in anchor_info[idx]["anchors"]
-            bbox_len = s / img_size
+            bbox_len = s
             for h in 1:f
                 for w in 1:f
                     cx = (w - 0.5) * scaler
@@ -170,7 +167,7 @@ end
 
 """
 Decoder functions:
-* The main motivation is that the network does not directly predict the proposals but
+The main motivation is that the network does not directly predict the proposals but
 the combination of prediction and prior anchor box style and rescaling gives the actual
 bounding box and landmark coordinations.
 """
@@ -178,16 +175,16 @@ function decode_points(bboxes, landmarks)
     priors = _get_priorboxes()
     priors = reshape(priors, (1, size(priors)...))
     decoded_bboxes = _decode_bboxes(bboxes, priors)
-    decoded_bboxes .*= img_size
+    # decoded_bboxes .*= img_size
     decoded_landmarks = _decode_landmarks(landmarks, priors)
-    decoded_landmarks .*= img_size
+    # decoded_landmarks .*= img_size
     return decoded_bboxes, decoded_landmarks
 end
 
 function _decode_bboxes(bbox, priors)
     centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* priors[:,:,3:end]
     lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end])
-    centers .-= centers ./ 2
+    # centers .-= centers ./ 2
     return cat(centers, lengths, dims=3)
 end
 

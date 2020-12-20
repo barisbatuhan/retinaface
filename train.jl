@@ -11,7 +11,6 @@ data = WIDER_Data(train_dir, labels_dir, train=true, batch_size=batch_size, dtyp
 print("[INFO] Data is loaded!\n")
 
 model = nothing
-
 if load_path === nothing
     model = RetinaFace(dtype=atype)
 else
