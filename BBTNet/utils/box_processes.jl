@@ -1,16 +1,19 @@
 include("../../configs.jl")
 
-function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
+function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
     priors = _get_priorboxes()
-    decoded_bboxes = _decode_bboxes(reshape(bboxes, (1, size(bboxes)...)), priors)
-    decoded_bboxes = reshape(decoded_bboxes, size(decoded_bboxes)[2:end]) .* img_size
-    iou_vals = iou(gt[:,1:4], decoded_bboxes) 
+    gt ./= img_size
     
-    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2) # gets max values and indices for each gt
-    max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) # gets max values and indices for each prior
+    iou_vals = iou(gt[:,1:4], _to_min_max_form(priors))
+    # gets max values and indices for each gt
+    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2)
+    # gets max values and indices for each prior
+    max_prior_vals, max_prior_idx = findmax(iou_vals; dims=1) 
     
     pos_gt_indices = getindex.(findall(max_gt_vals .>= pos_thold), [1 2])[:, 2]
-    pos_prior_indices = getindex.(max_gt_idx[findall(max_gt_vals .>= pos_thold)], [1 2])[:, 2]
+    pos_selected = findall(max_gt_vals .>= pos_thold)
+    pos_prior_indices = getindex.(max_gt_idx[pos_selected], [1 2])[:, 2]
+    
     num_pos_boxes = length(pos_gt_indices)
     if num_pos_boxes == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
@@ -20,24 +23,16 @@ function encode_gt_and_get_indices(gt, bboxes, pos_thold, neg_thold)
     neg_indices = max_prior_idx[findall(max_prior_vals .<= neg_thold)]
     if size(neg_indices)[1] > (ohem_ratio * num_pos_boxes)
         # select the most negative ohem_ratio * num_pos_boxes many boxes
-        neg_indices = getindex.(max_prior_idx[sortperm(vec(max_prior_vals))[1:ohem_ratio * num_pos_boxes]], [1 2])[:, 1]
+        most_neg = sortperm(vec(max_prior_vals))[1:ohem_ratio * num_pos_boxes]
+        neg_indices = getindex.(max_prior_idx[most_neg], [1 2])[:, 1]
     else
         neg_indices = getindex.(neg_indices, [1 2])[:, 1]
     end
-     
-    """
-    Below, encoding of the initial ground truth labels will be made. In the paper the process is summarized as:
-    Box_lengths     = log(gt_w / scale), log(gt_h / scale)
-    Point_coords    = [(bbox_x1 - anchor_center_x) / scale], [(bbox_x2 - anchor_center_x) / scale], 
-                      [(bbox_y1 - anchor_center_y) / scale], [(bbox_y2 - anchor_center_y) / scale],
-                      for each landmark 
-                        {[(landmark_x - anchor_center_x) / scale], [(landmark_y - anchor_center_y) / scale]}
-    
-    Here, the scale is actually the width and height of the prior anchor box.
-    """
+                    
     selected_priors = priors[pos_prior_indices,:]
     # gt bbox conversion
-    gt = gt[pos_gt_indices,:] ./ img_size # only positive ground truth values are included
+    gt = gt[pos_gt_indices,:] # only positive ground truth values are included
+    
     gt[:,1:4] = _to_center_length_form(gt[:,1:4])
     gt[:,3:4] = log.(gt[:,3:4] ./ selected_priors[:, 3:4])
     gt[:,1:2] = (gt[:,1:2] .- selected_priors[:, 1:2]) ./ selected_priors[:, 3:4]
@@ -139,7 +134,9 @@ Conversion from:
 """
 function _to_center_length_form(boxes)
     init_shape = size(boxes)
-    boxes = reshape(boxes, (prod(size(boxes)[1:end-1]), size(boxes)[end])) # converting to 2D
+    # converting to 2D
+    boxes = reshape(boxes, (prod(size(boxes)[1:end-1]), size(boxes)[end])) 
+    
     lengths = boxes[:,3:4] .- boxes[:,1:2]
     return reshape(cat(boxes[:,1:2] .+ (lengths ./ 2), lengths, dims=2), init_shape)
 end
@@ -179,6 +176,7 @@ bounding box and landmark coordinations.
 """
 function decode_points(bboxes, landmarks)
     priors = _get_priorboxes()
+    priors = reshape(priors, (1, size(priors)...))
     decoded_bboxes = _decode_bboxes(bboxes, priors)
     decoded_bboxes .*= img_size
     decoded_landmarks = _decode_landmarks(landmarks, priors)
@@ -187,19 +185,17 @@ function decode_points(bboxes, landmarks)
 end
 
 function _decode_bboxes(bbox, priors)
-    P = size(priors)[1]
-    centers = reshape(priors[:, 1:2], (1, P, 2)) .+ bbox[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
-    lengths = exp.(reshape(priors[:, 3:end], (1, P, 2)) .* bbox[:, :, 3:end])
+    centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* priors[:,:,3:end]
+    lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end])
     centers .-= centers ./ 2
-    return _to_min_max_form(cat(centers, lengths, dims=3))
+    return cat(centers, lengths, dims=3)
 end
 
 function _decode_landmarks(landmarks, priors)
-    P = size(priors)[1]
-    lm1 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 1:2] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm2 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 3:4] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm3 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 5:6] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm4 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 7:8] .* reshape(priors[:, 3:end], (1, P, 2))
-    lm5 = reshape(priors[:, 1:2], (1, P, 2)) .+ landmarks[:, :, 9:10] .* reshape(priors[:, 3:end], (1, P, 2))
+    lm1 = priors[:,:,1:2] .+ landmarks[:, :, 1:2]  .* priors[:,:,3:end]
+    lm2 = priors[:,:,1:2] .+ landmarks[:, :, 3:4]  .* priors[:,:,3:end]
+    lm3 = priors[:,:,1:2] .+ landmarks[:, :, 5:6]  .* priors[:,:,3:end]
+    lm4 = priors[:,:,1:2] .+ landmarks[:, :, 7:8]  .* priors[:,:,3:end]
+    lm5 = priors[:,:,1:2] .+ landmarks[:, :, 9:10] .* priors[:,:,3:end]
     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
 end

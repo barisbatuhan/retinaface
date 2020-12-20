@@ -17,7 +17,7 @@ save_dir        = "./weights/"
 load_path       = nothing
 
 # Extra Paths
-log_dir         = "./log_msgs1.txt"
+log_dir         = "./log_msgs.txt"
 
 # Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
@@ -47,15 +47,15 @@ lambda2         = 1
 # Training Parameters
 batch_size      = 10
 num_epochs      = 80
-weight_decay    = 0.0 #005
+weight_decay    = 0.0005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
 lr_change_epoch = [5, 55, 68]
 mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
-start_epoch     = 2
+start_epoch     = 1
 
 # Testing Parameters
-conf_level      = 0.99
+conf_level      = 0.9
 nms_threshold   = 0.4
 
 # Device Parameters

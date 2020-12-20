@@ -23,7 +23,8 @@ struct HeadGetter layers; task_len; end
 function HeadGetter(input_dim, num_anchors, task_len; scale_cnt=5, dtype=Array{Float64})
     layers = []
     for s in 1:scale_cnt
-        push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=false))
+        push!(layers, Conv2D(1, 1, input_dim, 
+                num_anchors*task_len, dtype=dtype, bias=false))
     end
     return HeadGetter(layers, task_len)
 end
@@ -33,12 +34,15 @@ function (hg::HeadGetter)(xs; train=true)
     for (i, x) in enumerate(xs)
         proposal = hg.layers[i](x, train=train)
         batch_size = size(proposal)[end]
+        # flattening all of the proposals
         num_proposals = Int(floor(prod(size(proposal)) / (hg.task_len * batch_size)))
         proposal = reshape(proposal, (batch_size, num_proposals, hg.task_len))
         push!(proposals, proposal)
     end
-    if hg.task_len == 2 softmax(cat(proposals..., dims=2), dims=3)
-    else return cat(proposals..., dims=2)
+    if hg.task_len == 2 && train == false 
+        return softmax(cat(proposals..., dims=2), dims=3)
+    else 
+        return cat(proposals..., dims=2)
     end
 end
 
@@ -107,8 +111,9 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
 
     if y === nothing && train == false
         # for predicting, the founded boxes should be decoded to their real values
-        class_vals = Array(class_vals) 
-        bbox_vals, landmark_vals = decode_points(Array(bbox_vals) , Array(landmark_vals))
+        class_vals = Array(class_vals)
+        bbox_vals = Array(bbox_vals); landmark_vals = Array(landmark_vals);
+        bbox_vals, landmark_vals = decode_points(bbox_vals, landmark_vals)
         
         N = size(class_vals)[1]
         cl_results = []; bbox_results = []; landmark_results = []
@@ -134,13 +139,13 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             push!(bbox_results, bbox_result)
             push!(landmark_results, landmark_result)
         end  
-        print("[INFO] Returning prediction results above confidence level: ", conf_level, ".\n")
+        print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
         return  cl_results, bbox_results, landmark_results 
     
     else
         # for training, loss will be calculated and returned
         loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0;
-        lmN = 0; bboxN = 0; clsN = 0;
+        lmN = 0; bboxN = 0;
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
@@ -154,9 +159,8 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
                 continue 
             end 
             
-            bboxes = Array(value(bbox_vals[n,:,:]))
             gt, pos_indices, neg_indices = encode_gt_and_get_indices(
-                permutedims(y[n],(2, 1)), bboxes, pos_thold, neg_thold)   
+                permutedims(y[n],(2, 1)), pos_thold, neg_thold)   
             
             if pos_indices !== nothing 
                 lm_indices = findall(gt[:,15] .>= 0)
@@ -175,11 +179,9 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
                 batch_cls[n, pos_indices] .= 1
                 batch_cls[n, neg_indices] .= 2
                 bboxN += size(pos_indices, 1) # * 2
-                clsN += size(pos_indices, 1) + size(neg_indices, 1)
             end 
         end
         
-        clsN = clsN == 0 ? 1 : clsN
         bboxN = bboxN == 0 ? 1 : bboxN
         lmN = lmN == 0 ? 1 : lmN
             
@@ -205,12 +207,8 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
         loss_cls = loss_cls === NaN ? 0 : loss_cls  
         total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_lm - loss_decay
         
-        to_print =  "Total Loss: " * string(round.(value(total_loss); digits=3)) * " \t|\t " 
-        to_print *= "Cls Loss: " * string(round.(value(loss_cls); digits=3)) * " \t|\t " 
-        to_print *= "Box Loss: " * string(round.(value(loss_bbox); digits=3)) * " \t|\t " 
-        to_print *= "Lm Loss: " * string(round.(value(loss_lm); digits=3)) * " \t|\t " 
-        to_print *= "Decay: " * string(round.(value(loss_decay); digits=3)) * "\n"
-        
+        to_print = get_losses_string(
+            total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
         
         if total_loss > 0
             print(to_print)
@@ -229,25 +227,32 @@ function train_model(model::RetinaFace, data_reader; val_data=nothing, save_dir=
         iter_no = 1
         last_loss = 0
         total_batches = size(state, 1) + size(imgs)[end]
-        curr_batch = size(imgs)[end]
+        curr_batch = 0
         
         while state !== nothing 
-            # (imgs, boxes), _ = iterate(data_reader, state) # for running the same batch over and over        
+            # for running the same batch over and over
+            # (imgs, boxes), _ = iterate(data_reader, state)         
             
-            if mod(iter_no, Int(50 / size(imgs)[end])) == 1
-                to_print =  "--- Epoch: " * string(e) * " & Batch: " * string(curr_batch) * "/" * string(total_batches) * "\n"
+            if mod(iter_no, 5) == 1
+                to_print  = "\n--- Epoch: " * string(e) 
+                to_print *= " & Batch: " * string(curr_batch) * "/" 
+                to_print *= string(total_batches) * "\n\n"
                 print(to_print)
                 open(log_dir, "a") do io write(io, to_print) end;
             end
             
             if e < lr_change_epoch[1]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[1], gamma=momentum)
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
+                    lr=lrs[1], gamma=momentum)
             elseif e < lr_change_epoch[2]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[2], gamma=momentum)
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
+                    lr=lrs[2], gamma=momentum)
             elseif e < lr_change_epoch[3]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[3], gamma=momentum)
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
+                    lr=lrs[3], gamma=momentum)
             else
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=lrs[4], gamma=momentum)
+                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
+                    lr=lrs[4], gamma=momentum)
             end
            
             if !(length(state) == 0 || state === nothing)
@@ -297,4 +302,25 @@ end
 
 function save_model(model::RetinaFace, file_name)
     Knet.save(file_name, "model", model)
+end
+
+function get_losses_string(total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
+    total = string(round.(value(total_loss); digits=3))
+    cls = string(round.(value(loss_cls); digits=3))
+    bbox = string(round.(value(loss_bbox); digits=3))
+    lm = string(round.(value(loss_lm); digits=3))
+    decay = string(round.(value(loss_decay); digits=3))
+    
+    if length(total) < 8 total *= "0"^(8-length(total)) end
+    if length(cls) < 6 cls *= "0"^(6-length(cls)) end
+    if length(bbox) < 8 bbox *= "0"^(8-length(bbox)) end
+    if length(lm) < 8 lm *= "0"^(8-length(lm)) end
+    if length(decay) < 6 decay *= "0"^(6-length(decay)) end    
+        
+    to_print  = "Total Loss: " *  total * " | " 
+    to_print *= "Cls Loss: "   * cls    * " | " 
+    to_print *= "Box Loss: "   * bbox   * " | " 
+    to_print *= "Lm Loss: "    * lm     * " | " 
+    to_print *= "Decay: "      * decay  * "\n"
+    return to_print
 end

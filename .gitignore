@@ -17,3 +17,6 @@ venv/*
 *.log
 *log.txt
 *.txt
+
+# Temporary files
+*.ipynb
