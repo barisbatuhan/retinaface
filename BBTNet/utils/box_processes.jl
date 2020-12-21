@@ -48,34 +48,26 @@ The parts below are mostly adapted from:
 * https://github.com/Hakuyume/chainer-ssd
 """
 
-function nms(conf, bbox)
-    points = _to_min_max_form(bbox)
+function nms(conf, points)
     x1 = points[:,1]; y1 = points[:,2]; x2 = points[:,3]; y2 = points[:,4];
     scores = conf[:,1]
     
     areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
-    order = sortperm(vec(scores), rev=true)
-    
+    order = sortperm(vec(scores), rev=true) 
     keep = []
+    
     while size(order, 1) > 0
         i = order[1]
         push!(keep, i)
         if size(order, 1) == 1 break end
-        xx1 = max.(x1[i], x1[order[2:end]])
-        yy1 = max.(y1[i], y1[order[2:end]])
-        xx2 = min.(x2[i], x2[order[2:end]])
-        yy2 = min.(y2[i], y2[order[2:end]])
-        
-        w = max.(0.0, xx2 - xx1 .+ 1)
-        h = max.(0.0, yy2 - yy1 .+ 1)
-        inter = w .* h
-        ovr = inter ./ (areas[i] .+ areas[order[2:end]] .- inter)
-        
-        inds = findall(ovr .<= nms_threshold)
-        if size(inds, 1) == 0 break
-        else inds = inds[1]
+        iou_vals = iou(points[i:i,:], points[order[2:end],:])
+        inds = getindex.(findall(iou_vals .<= nms_threshold), [1 2])[:, 2]
+        if size(inds, 1) == 0 
+            break
+        else 
+            inds = inds[1]
+            order = order[inds+1:end]
         end
-        order = order[inds+1:end]
     end
     return keep
 end
@@ -150,13 +142,12 @@ function _get_priorboxes()
     counter = 1
     for (idx, f) in enumerate(feature_maps)
         scaler = anchor_info[idx]["stride"]
-        for s in anchor_info[idx]["anchors"]
-            bbox_len = s
-            for h in 1:f
-                for w in 1:f
-                    cx = (w - 0.5) * scaler
-                    cy = (h - 0.5) * scaler
-                    anchors[counter,:] = [cx cy bbox_len bbox_len]
+        for h in 1:f
+            cy = (h - 0.5) * scaler
+            for w in 1:f
+                cx = (w - 0.5) * scaler
+                for s in anchor_info[idx]["anchors"]
+                    anchors[counter,:] = [cx cy s s]
                     counter += 1
                 end
             end

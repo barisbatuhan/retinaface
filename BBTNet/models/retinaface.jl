@@ -17,32 +17,32 @@ Takes final Context Head Outputs and converts these into proposals.
 Same structure for BBox, Classifier and Landmark tasks.
 task_len is 2 for classification, 4 for bbox and 10 for landmark
 """
-struct HeadGetter layers; task_len; end
+mutable struct HeadGetter 
+    layers
+    task_len 
 
-function HeadGetter(input_dim, num_anchors, task_len; scale_cnt=5, dtype=Array{Float64})
-    layers = []
-    for s in 1:scale_cnt
-        push!(layers, Conv2D(1, 1, input_dim, 
-                num_anchors*task_len, dtype=dtype, bias=false))
+    function HeadGetter(input_dim, task_len; scale_cnt=5, dtype=Array{Float32})
+        layers = []
+        for s in 1:scale_cnt
+            push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=false))
+        end
+        return new(layers, task_len)
     end
-    return HeadGetter(layers, task_len)
 end
+
 
 function (hg::HeadGetter)(xs; train=true)
     proposals = []
     for (i, x) in enumerate(xs)
         proposal = hg.layers[i](x, train=train)
-        batch_size = size(proposal)[end]
-        # flattening all of the proposals
-        num_proposals = Int(floor(prod(size(proposal)) / (hg.task_len * batch_size)))
-        proposal = reshape(proposal, (batch_size, num_proposals, hg.task_len))
+        W, H, C, N = size(proposal); T = hg.task_len;
+        # converting all proposals from 2D shape (W x H) to 1D
+        # here, the order with the construction of prior boxes is preserved
+        proposal = reshape(permutedims(proposal, (4, 2, 1, 3)), (N, W*H, C))
+        proposal = cat([proposal[:,:,(a-1)*T+1:a*T] for a in 1:num_anchors]..., dims=2)
         push!(proposals, proposal)
     end
-    if hg.task_len == 2
-        return softmax(cat(proposals..., dims=2), dims=3)
-    else
-        return cat(proposals..., dims=2)
-    end
+    return cat(proposals..., dims=2)
 end
 
 """
@@ -62,18 +62,21 @@ struct RetinaFace
     dtype
 end
 
-function RetinaFace(;dtype=Array{Float64}, load_path=nothing) 
+function RetinaFace(;dtype=Array{Float32}, load_path=nothing) 
     
     if load_path !== nothing
         return load_model(load_path)
     else
-        backbone = load_mat_weights(ResNet50(include_top=false, dtype=dtype), "./weights/imagenet-resnet-50-dag.mat")
+        backbone = load_mat_weights(
+            ResNet50(include_top=false, dtype=dtype), 
+            "./weights/imagenet-resnet-50-dag.mat"
+        )
         return RetinaFace(
             backbone,
             FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
-            HeadGetter(256, num_anchors, 2, dtype=dtype), HeadGetter(256, num_anchors, 2, dtype=dtype),
-            HeadGetter(256, num_anchors, 4, dtype=dtype), HeadGetter(256, num_anchors, 4, dtype=dtype),
-            HeadGetter(256, num_anchors, 10, dtype=dtype), HeadGetter(256, num_anchors, 10, dtype=dtype),
+            HeadGetter(256, 2, dtype=dtype), HeadGetter(256, 2, dtype=dtype),
+            HeadGetter(256, 4, dtype=dtype), HeadGetter(256, 4, dtype=dtype),
+            HeadGetter(256, 10, dtype=dtype), HeadGetter(256, 10, dtype=dtype),
             dtype
         )   
     end
@@ -110,17 +113,18 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
 
     if y === nothing && train == false
         # for predicting, the founded boxes should be decoded to their real values
-        class_vals = Array(class_vals)
+        class_vals = Array(softmax(class_vals, dims=3))
         bbox_vals = Array(bbox_vals); landmark_vals = Array(landmark_vals);
         bbox_vals, landmark_vals = decode_points(bbox_vals, landmark_vals)
         
+        bbox_vals = _to_min_max_form(bbox_vals)  
+        bbox_vals[findall(bbox_vals .< 0)] .= 0
+        bbox_vals[findall(bbox_vals .> img_size)] .= img_size
+               
         N = size(class_vals)[1]
         cl_results = []; bbox_results = []; landmark_results = []
         
         for n in 1:N 
-            
-            bbox_vals[findall(bbox_vals .< 0)] .= 0
-            bbox_vals[findall(bbox_vals .> img_size)] .= img_size
             
             # confidence threshold check
             indices = findall(class_vals[n,:,1] .>= conf_level)
@@ -137,7 +141,7 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             # pushing results
             push!(cl_results, cl_result)
             push!(bbox_results, bbox_result)
-            push!(landmark_results, landmark_result)
+            push!(landmark_results, landmark_result)            
         end  
         
         print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
@@ -145,17 +149,17 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
     
     else
         # for training, loss will be calculated and returned
-        loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0;
-        clsN = 0; lmN = 0; bboxN = 0;
+        loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0; lmN = 0; bboxN = 0;
         pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
         neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
         
-        N = size(class_vals, 1)       
+        N, P, _ = size(class_vals)       
         # helper parameters for calculating losses
-        batch_cls = convert(model.dtype, zeros(size(class_vals)...))
+        batch_cls = convert(Array{Int64}, zeros(N, P))
         batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
         
-        for n in 1:N # loop for each input in batch, all inputs may have different box counts
+        for n in 1:N 
+            # loop for each input in batch, all inputs may have different box counts
             if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
                 continue # if the cropped image has no faces
             end 
@@ -165,42 +169,41 @@ function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
             
             if pos_indices !== nothing 
                 # if boxes with high enough IOU are found                
-                lm_indices = findall(gt[:,15] .>= 0)
+                lm_indices = getindex.(findall(gt[:,15] .>= 0))
                 gt = convert(model.dtype, gt)
                 
                 if size(lm_indices, 1) > 0 
                     # counting only the ones with landmark data 
-                    lm_indices = getindex.(lm_indices)
                     batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
                     lmN += size(lm_indices, 1)
                 end
                 
                 batch_gt[n,pos_indices,1:4] = gt[:,1:4]             
-                batch_cls[n, pos_indices, 1] .= 1; batch_cls[n, neg_indices, 2] .= 1; 
+                batch_cls[n, pos_indices] .= 1; batch_cls[n, neg_indices] .= 2; 
                 
                 bboxN += size(pos_indices, 1) 
-                clsN += size(pos_indices, 1) + size(neg_indices, 1)
             end 
         end
         
         # in case no boxes are matched in the whole batch
-        clsN = clsN == 0 ? 1 : clsN
         bboxN = bboxN == 0 ? 1 : bboxN
         lmN = lmN == 0 ? 1 : lmN
             
-        # classification negative log loss
-        loss_cls  = sum(-1 .* log.(class_vals .* batch_cls .+ 1 .- batch_cls)) / clsN
+        # classification negative log likelihood loss
+        class_vals = reshape(permutedims(class_vals, (3, 2, 1)), (2, N*P))
+        batch_cls = vec(permutedims(batch_cls, (2, 1)))
+        loss_cls = nll(class_vals, batch_cls)
         # regression loss of the box centers, width and height
         loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
         # box center and all landmark points regression loss per point
-        loss_pts += smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
-
+        loss_pts = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
+        
         # weight decay
         if weight_decay > 0
             for p in params(model)
                 if size(size(p), 1) == 4 && size(p, 4) > 1
                     # only taking weights but not biases and moments
-                    loss_decay += weight_decay * sum(p.^2)
+                    loss_decay += weight_decay * sum(p .* p)
                 end
             end
         end
@@ -297,10 +300,10 @@ function get_losses_string(total_loss, loss_cls, loss_bbox, loss_lm, loss_decay)
     lm = string(round.(value(loss_lm); digits=3))
     decay = string(round.(value(loss_decay); digits=3))
     
-    if length(total) < 8 total *= "0"^(8-length(total)) end
-    if length(cls) < 8 cls *= "0"^(8-length(cls)) end
-    if length(bbox) < 8 bbox *= "0"^(8-length(bbox)) end
-    if length(lm) < 8 lm *= "0"^(8-length(lm)) end
+    if length(total) < 6 total *= "0"^(6-length(total)) end
+    if length(cls) < 6 cls *= "0"^(6-length(cls)) end
+    if length(bbox) < 6 bbox *= "0"^(6-length(bbox)) end
+    if length(lm) < 6 lm *= "0"^(6-length(lm)) end
     if length(decay) < 6 decay *= "0"^(6-length(decay)) end    
         
     to_print  = "Total Loss: " *  total * " | " 

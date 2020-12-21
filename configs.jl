@@ -13,7 +13,7 @@ aflw_path       = "/datasets/aflw/"
 # Weight Paths
 r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
 save_dir        = "./weights/"
-# load_path       = "./weights/model_epoch1.jld2"
+# load_path       = "./weights/model_6_6430.jld2"
 load_path       = nothing
 
 # Extra Paths
@@ -48,7 +48,7 @@ lambda2         = 1
 # Training Parameters
 batch_size      = 10
 num_epochs      = 80
-weight_decay    = 0.0 # 005
+weight_decay    = 0.00005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
 lr_change_epoch = [5, 55, 68]

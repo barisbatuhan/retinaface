@@ -6,7 +6,7 @@ Non-Deformable Context Head Module Network for the RetinaFace.
 """
 struct SSH conv128; conv64_1_1; conv64_1_2; conv64_2_1; conv64_2_2; end
 
-function SSH(; input_dim=256, dtype=Array{Float64})
+function SSH(; input_dim=256, dtype=Array{Float32})
     out_dim = Int(floor(input_dim/4))
     return SSH(
         ConvBn(3, 3, input_dim, Int(floor(input_dim/2)), bias=false, dtype=dtype, padding=1),

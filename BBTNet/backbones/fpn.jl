@@ -5,7 +5,7 @@ Upsampling and Pyramid Network for the RetinaFace.
 """
 struct FPN o6; o2; o3; o4; o5; merge4; merge3; merge2; end
 
-function FPN(;in_size=2048, dtype=Array{Float64})
+function FPN(;in_size=2048, dtype=Array{Float32s})
     return FPN(
         ConvBn(3, 3, in_size, 256, init=xavier, stride=2, bias=false, padding=1, dtype=dtype),
         ConvBn(1, 1, 256, 256, f=relu, bias=false, dtype=dtype),
