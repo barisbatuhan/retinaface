@@ -2,7 +2,7 @@ include("../core/layers.jl")
 include("../core/blocks.jl")
 
 """
-Non-Deformable Context Head Module Network for the RetinaFace. 
+Non-Deformable Context Head Module Network components for the RetinaFace. 
 """
 struct SSH conv128; conv64_1_1; conv64_1_2; conv64_2_1; conv64_2_2; end
 

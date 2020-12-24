@@ -12,12 +12,13 @@ aflw_path       = "/datasets/aflw/"
 
 # Weight Paths
 r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
-save_dir        = "./weights/"
-# load_path       = "./weights/model_6_6430.jld2"
+save_dir        = "./weights/new_loss_"
+# save_dir        = nothing
+# load_path       = "./weights/ssh_model_11.jld2"
 load_path       = nothing
 
 # Extra Paths
-log_dir         = "./log_msgs.txt"
+log_dir         = "../new_loss_ssh.txt"
 
 # Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
@@ -41,19 +42,24 @@ head1_neg_iou   = 0.3
 head2_pos_iou   = 0.5
 head2_neg_iou   = 0.4
 ohem_ratio      = 3
-ohem_neg_iou    = 0.1
 lambda1         = 1
 lambda2         = 1
 
 # Training Parameters
 batch_size      = 10
-num_epochs      = 80
+num_epochs      = 30 # 80
 weight_decay    = 0.00005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
-lr_change_epoch = [5, 55, 68]
-mode            = 0 # 1 means first context head, 2 means second context head, 0 means no context head
+# lr_change_epoch = [5, 55, 68]
+lr_change_epoch = [2, 16, 23]
 start_epoch     = 1
+
+# modes:
+# 0  --> baseline forward, 
+# 1  --> using both context heads for forward, 
+# 2  --> second context head forward, 
+mode            = 1
 
 # Testing Parameters
 conf_level      = 0.9

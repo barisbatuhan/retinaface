@@ -4,7 +4,7 @@ using FileIO
 # Network codes
 include("../backbones/resnet.jl")
 include("../backbones/fpn.jl")
-include("../backbones/ssh.jl")
+include("../backbones/context_module.jl")
 # BBox Related Codes
 include("../utils/box_processes.jl")
 # Loss Functions
@@ -13,9 +13,9 @@ include("../core/losses.jl")
 include("../../configs.jl")
 
 """
-Takes final Context Head Outputs and converts these into proposals.
-Same structure for BBox, Classifier and Landmark tasks.
-task_len is 2 for classification, 4 for bbox and 10 for landmark
+- Takes final Context Head Outputs and converts these into proposals.
+- Same structure for BBox, Classifier and Landmark tasks.
+- task_len is 2 for classification, 4 for bbox and 10 for landmark points.
 """
 mutable struct HeadGetter 
     layers
@@ -42,23 +42,21 @@ function (hg::HeadGetter)(xs; train=true)
         proposal = cat([proposal[:,:,(a-1)*T+1:a*T] for a in 1:num_anchors]..., dims=2)
         push!(proposals, proposal)
     end
-    return cat(proposals..., dims=2)
+    if hg.task_len == 2
+        return softmax(cat(proposals..., dims=2), dims=3)
+    else
+        return cat(proposals..., dims=2)
+    end
 end
 
 """
 Our actual model that predicts bounding boxes and landmarks.
 """
 struct RetinaFace
-    backbone
-    fpn
-    head_module1
-    head_module2
-    class_conv1
-    class_conv2
-    bbox_conv1
-    bbox_conv2
-    landmark_conv1
-    landmark_conv2
+    backbone; fpn; context_module;
+    cls_head1; cls_head2;
+    bbox_head1; bbox_head2;
+    lm_head1; lm_head2;
     dtype
 end
 
@@ -72,9 +70,8 @@ function RetinaFace(;dtype=Array{Float32}, load_path=nothing)
             "./weights/imagenet-resnet-50-dag.mat"
         )
         return RetinaFace(
-            backbone,
-            FPN(dtype=dtype), SSH(dtype=dtype), SSH(dtype=dtype),
-            HeadGetter(256, 2, dtype=dtype), HeadGetter(256, 2, dtype=dtype),
+            backbone, FPN(dtype=dtype), ContextModule(dtype=dtype), # full baseline
+            HeadGetter(256, 2, dtype=dtype), HeadGetter(256, 2, dtype=dtype), 
             HeadGetter(256, 4, dtype=dtype), HeadGetter(256, 4, dtype=dtype),
             HeadGetter(256, 10, dtype=dtype), HeadGetter(256, 10, dtype=dtype),
             dtype
@@ -82,158 +79,195 @@ function RetinaFace(;dtype=Array{Float32}, load_path=nothing)
     end
 end
 
-# mode 1 means first context head, 2 means second context head, 0 means no context head
-function (model::RetinaFace)(x, y=nothing, mode=0, train=true, weight_decay=0)
-    # first processes
-    c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
-    p_vals = model.fpn([c2, c3, c4, c5], train=train)
-    
-    class_vals = nothing; bbox_vals = nothing; landmark_vals = nothing; 
-    if mode == 1
-        # 1st context head module
-        idx = 1
-        for idx in 1:size(p_vals)[1]
-            p_vals[idx] = model.head_module1(p_vals[idx], train=train)
-        end
-        class_vals = model.class_conv1(p_vals, train=train)
-        bbox_vals = model.bbox_conv1(p_vals, train=train)
-        landmark_vals = model.landmark_conv1(p_vals, train=train)
-    
-    else
-        # 2nd context head module
-        if mode == 2
-            for idx in 1:size(p_vals)[1]
-                p_vals[idx] = model.head_module2(p_vals[idx], train=train)
-            end
-        end
-        class_vals = model.class_conv2(p_vals, train=train)
-        bbox_vals = model.bbox_conv2(p_vals, train=train)
-        landmark_vals = model.landmark_conv2(p_vals, train=train)
-    end
 
-    if y === nothing && train == false
-        # for predicting, the founded boxes should be decoded to their real values
-        class_vals = Array(softmax(class_vals, dims=3))
-        bbox_vals = Array(bbox_vals); landmark_vals = Array(landmark_vals);
-        bbox_vals, landmark_vals = decode_points(bbox_vals, landmark_vals)
-        
-        bbox_vals = _to_min_max_form(bbox_vals)  
-        bbox_vals[findall(bbox_vals .< 0)] .= 0
-        bbox_vals[findall(bbox_vals .> img_size)] .= img_size
-               
-        N = size(class_vals)[1]
-        cl_results = []; bbox_results = []; landmark_results = []
-        
-        for n in 1:N 
-            
-            # confidence threshold check
-            indices = findall(class_vals[n,:,1] .>= conf_level)
-            cl_result = class_vals[n, indices, :]
-            bbox_result = bbox_vals[n, indices, :]
-            landmark_result = landmark_vals[n, indices, :]
-            
-            # NMS check
-            indices = nms(cl_result, bbox_result)
-            cl_result = cl_result[indices,:]
-            bbox_result = bbox_result[indices,:]
-            landmark_result = landmark_result[indices,:]
-            
-            # pushing results
-            push!(cl_results, cl_result)
-            push!(bbox_results, bbox_result)
-            push!(landmark_results, landmark_result)            
-        end  
-        
-        print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
-        return  cl_results, bbox_results, landmark_results 
+# modes:
+# 0 --> for getting p_vals
+# 1 --> first context head forward, 
+# 2 --> second context head forward, 
+function (model::RetinaFace)(x; p_vals = nothing, mode=0, train=true)
     
-    else
-        # for training, loss will be calculated and returned
-        loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0; lmN = 0; bboxN = 0;
-        pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
-        neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
-        
-        N, P, _ = size(class_vals)       
-        # helper parameters for calculating losses
-        batch_cls = convert(Array{Int64}, zeros(N, P))
-        batch_gt = cat(value(bbox_vals), value(landmark_vals), dims=3)
-        
-        for n in 1:N 
-            # loop for each input in batch, all inputs may have different box counts
-            if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
-                continue # if the cropped image has no faces
-            end 
-            
-            gt, pos_indices, neg_indices = encode_gt_and_get_indices(
-                permutedims(y[n],(2, 1)), pos_thold, neg_thold)   
-            
-            if pos_indices !== nothing 
-                # if boxes with high enough IOU are found                
-                lm_indices = getindex.(findall(gt[:,15] .>= 0))
-                gt = convert(model.dtype, gt)
-                
-                if size(lm_indices, 1) > 0 
-                    # counting only the ones with landmark data 
-                    batch_gt[n,pos_indices[lm_indices],5:14] = gt[lm_indices,5:14]
-                    lmN += size(lm_indices, 1)
-                end
-                
-                batch_gt[n,pos_indices,1:4] = gt[:,1:4]             
-                batch_cls[n, pos_indices] .= 1; batch_cls[n, neg_indices] .= 2; 
-                
-                bboxN += size(pos_indices, 1) 
-            end 
-        end
-        
-        # in case no boxes are matched in the whole batch
-        bboxN = bboxN == 0 ? 1 : bboxN
-        lmN = lmN == 0 ? 1 : lmN
-            
-        # classification negative log likelihood loss
-        class_vals = reshape(permutedims(class_vals, (3, 2, 1)), (2, N*P))
-        batch_cls = vec(permutedims(batch_cls, (2, 1)))
-        loss_cls = nll(class_vals, batch_cls)
-        # regression loss of the box centers, width and height
-        loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
-        # box center and all landmark points regression loss per point
-        loss_pts = smooth_l1(abs.(batch_gt[:,:,5:end] .- landmark_vals)) / lmN
-        
-        # weight decay
-        if weight_decay > 0
-            for p in params(model)
-                if size(size(p), 1) == 4 && size(p, 4) > 1
-                    # only taking weights but not biases and moments
-                    loss_decay += weight_decay * sum(p .* p)
-                end
+    if p_vals === nothing
+        c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
+        p_vals = model.fpn([c2, c3, c4, c5], train=train)
+        p_vals = model.context_module(p_vals, train=train) 
+    end
+    
+    class_vals = nothing; bbox_vals = nothing; landmark_vals = nothing;    
+    
+    if mode == 0
+        return p_vals 
+    
+    elseif mode == 1
+        class_vals = model.cls_head1(p_vals, train=train)
+        bbox_vals = model.bbox_head1(p_vals, train=train)
+        landmark_vals = model.lm_head1(p_vals, train=train)
+    
+    elseif mode == 2
+        class_vals = model.cls_head2(p_vals, train=train)
+        bbox_vals = model.bbox_head2(p_vals, train=train)
+        landmark_vals = model.lm_head2(p_vals, train=train)
+    end
+    
+    return class_vals, bbox_vals, landmark_vals
+end
+
+# modes:
+# 0  --> baseline forward, 
+# 1  --> using both context heads for forward, 
+# 2  --> second context head forward, 
+function (model::RetinaFace)(x, y, mode=0, train=true, weight_decay=0)
+    
+    p_vals = model(x, mode=0, train=train); priors = _get_priorboxes();
+    cls_vals = nothing; bbox_vals = nothing; lm_vals = nothing;
+    h1c_loss = 0; h1b_loss = 0; h1l_loss = 0; # first context head losses
+    h2c_loss = 0; h2b_loss = 0; h2l_loss = 0; # second context head / baseline losses
+    decay_loss = 0; # decay loss if decay value is bigger than 0
+    
+    if mode == 1
+        # do the forward pass and calculate first head loss
+        cls_vals1, bbox_vals1, lm_vals1 = model(x, mode=1, p_vals=p_vals, train=train)
+        h1c_loss, h1b_loss, h1l_loss = get_loss(cls_vals1, bbox_vals1, lm_vals1, y, priors, mode=1)
+        priors = _decode_bboxes(convert(Array{Float32}, value(bbox_vals1)), priors)
+    end
+    
+    cls_vals2, bbox_vals2, lm_vals2 = model(x, mode=2, p_vals=p_vals, train=train)
+    h2c_loss, h2b_loss, h2l_loss = get_loss(cls_vals2, bbox_vals2, lm_vals2, y, priors, mode=2) 
+    
+    if weight_decay > 0 # only taking weights but not biases and moments
+        for p in params(model)
+            if size(size(p), 1) == 4 && size(p, 4) > 1
+                decay_loss += weight_decay * sum(p .* p)
             end
         end
-        
-        loss_cls = loss_cls === NaN ? 0 : loss_cls  
-        total_loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts - loss_decay
-        
-        if total_loss > 0
-            to_print = get_losses_string(
-                total_loss, loss_cls, loss_bbox, loss_pts, loss_decay)
-            print(to_print)
-            open(log_dir, "a") do io write(io, to_print) end;
-        end
-        return total_loss
     end
+    
+    loss_cls = h1c_loss + h2c_loss
+    loss_bbox = h1b_loss + h2b_loss
+    loss_pts = h1l_loss + h2l_loss
+    
+    loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts - decay_loss
+        
+    to_print = get_losses_string(loss, loss_cls, loss_bbox, loss_pts, decay_loss)
+    print(to_print); open(log_dir, "a") do io write(io, to_print) end; # saving data
+        
+    return loss
+end
+
+# if mode is 1, then first head IOUs are taken, otherwise second head IOUs
+function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2) 
+
+    loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0; lmN = 0; bboxN = 0;
+    pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
+    neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
+            
+    # helper parameters for calculating losses
+    N, P, _ = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(N, P))
+    batch_gt = cat(value(bbox_vals), value(lm_vals), dims=3)
+        
+    for n in 1:N 
+        # loop for each input in batch, all inputs may have different box counts
+        if isempty(y[n]) || (y[n] == []) || (y[n] === nothing)
+            continue # if the cropped image has no faces
+        end 
+            
+        l_cls = -log.(vec(Array(value(cls_vals[n,:,2]))))
+        rev_y = permutedims(y[n],(2, 1)); prior = nothing;
+        
+        if length(size(priors)) > 2 prior = priors[n, :, :]
+        else prior = priors
+        end
+        
+        gt, pos_idx, neg_idx = encode_gt_and_get_indices(rev_y, prior, l_cls, pos_thold, neg_thold)   
+            
+        if pos_idx !== nothing 
+            # if boxes with high enough IOU are found                
+            lm_indices = getindex.(findall(gt[:,15] .>= 0))
+            gt = convert(model.dtype, gt)
+                
+            if size(lm_indices, 1) > 0 
+                # counting only the ones with landmark data 
+                batch_gt[n,pos_idx[lm_indices],5:14] = gt[lm_indices,5:14]
+                lmN += size(lm_indices, 1)
+            end
+                
+            batch_gt[n,pos_idx,1:4] = gt[:,1:4]; bboxN += size(pos_idx, 1);          
+            batch_cls[n, pos_idx] .= 1; batch_cls[n, neg_idx] .= 2; 
+        end 
+    end
+        
+    # in case no boxes are matched in the whole batch
+    bboxN = bboxN == 0 ? 1 : bboxN
+    lmN = lmN == 0 ? 1 : lmN
+            
+    # classification negative log likelihood loss
+    cls_vals = reshape(permutedims(cls_vals, (3, 2, 1)), (2, N*P))
+    batch_cls = vec(permutedims(batch_cls, (2, 1)))    
+    loss_cls = nll(cls_vals, batch_cls)
+    
+    # regression loss of the box centers, width and height
+    loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
+    
+    # box center and all landmark points regression loss per point
+    loss_pts = smooth_l1(abs.(batch_gt[:,:,5:end] .- lm_vals)) / lmN   
+    
+    if (isinf(value(loss_cls)) || isnan(value(loss_cls))) loss_cls = 0 end 
+    
+    return loss_cls, loss_bbox, loss_pts
+end
+
+# mode 1 for 2 context heads, mode 2 for only 1 context head
+function predict_model(model::RetinaFace, x; mode=2) 
+    # getting predictions
+    p_vals = model(x, mode=0, train=train); priors = _get_priorboxes();
+    
+    if mode == 1
+        _, bbox_vals1, _ = model(x, mode=1, p_vals=p_vals, train=false)
+        priors = _decode_bboxes(convert(Array{Float32}, value(bbox_vals1)), priors)
+    end
+    
+    cls_vals, bbox_vals, lm_vals = model(x, mode=2, p_vals=p_vals, train=false)
+    cls_vals = Array(cls_vals); bbox_vals = Array(bbox_vals); lm_vals = Array(lm_vals);
+    
+    # decoding points to min and max
+    bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
+    bbox_vals = _to_min_max_form(bbox_vals)  
+    
+    bbox_vals[findall(bbox_vals .< 0)] .= 0
+    bbox_vals[findall(bbox_vals .> img_size)] .= img_size
+               
+    cls_results = []; bbox_results = []; lm_results = []
+        
+    for n in 1:size(cls_vals)[1]     
+        # confidence threshold check
+        indices = findall(cls_vals[n,:,1] .>= conf_level)
+        cls_result = cls_vals[n, indices, :]
+        bbox_result = bbox_vals[n, indices, :]
+        lm_result = lm_vals[n, indices, :]   
+        # NMS check
+        indices = nms(vec(cl_result[:,1]), bbox_result)
+        cls_result = cls_result[indices,:]
+        bbox_result = bbox_result[indices,:]
+        lm_result = lm_result[indices,:]   
+        # pushing results
+        push!(cls_results, cls_result)
+        push!(bbox_results, bbox_result)
+        push!(lm_results, lm_result)  
+    end
+    
+    print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
+    return cls_results, bbox_results, landmark_results 
 end
 
 function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothing)
     open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n") end;
+    
     for e in start_epoch:num_epochs
-        (imgs, boxes), state = iterate(reader)
-        iter_no = 1
-        last_loss = 0
-        total_batches = size(state, 1) + size(imgs)[end]
-        curr_batch = 0
         
-        while state !== nothing 
-            # for running the same batch over and over
-            # (imgs, boxes), _ = iterate(data_reader, state)         
-            
+        (imgs, boxes), state = iterate(reader)
+        iter_no = 1; last_loss = 0; 
+        total_batches = size(state, 1) + size(imgs)[end]; curr_batch = 0; 
+        
+        while state !== nothing                
             if mod(iter_no, 5) == 1
                 to_print  = "\n--- Epoch: " * string(e) 
                 to_print *= " & Batch: " * string(curr_batch) * "/" 
@@ -255,12 +289,12 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
                 momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
                     lr=lrs[4], gamma=momentum)
             end
-           
+               
             if !(length(state) == 0 || state === nothing)
                 (imgs, boxes), state = iterate(reader, state)
                 iter_no += 1
                 curr_batch += size(imgs)[end]
-                if save_dir !== nothing && mod(iter_no, 644) == 0
+                if save_dir !== nothing && mod(iter_no, 650) == 0
                     save_model(model, save_dir * "model_" * string(e) * "_" * string(curr_batch) * ".jld2")    
                 end   
             else
@@ -271,18 +305,6 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
             end
         end
     end
-end
-
-function evaluate_model(model::RetinaFace, data_reader)
-    (imgs, boxes), state = iterate(data_reader)
-    num_iters = 0
-    loss_val = 0.0
-    while state !== nothing
-        loss_val += model(imgs, boxes, mode, false, 0)
-        num_iters += 1
-        (imgs, boxes), state = iterate(data_reader)
-    end
-    return loss_val / num_iters
 end
 
 function load_model(file_name)

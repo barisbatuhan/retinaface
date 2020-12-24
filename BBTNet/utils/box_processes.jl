@@ -1,7 +1,6 @@
 include("../../configs.jl")
 
-function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
-    priors = _get_priorboxes()
+function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     iou_vals = iou(gt[:,1:4], _to_min_max_form(priors))
     # gets max values and indices for each gt
     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2)
@@ -20,11 +19,10 @@ function encode_gt_and_get_indices(gt, pos_thold, neg_thold)
     end
     
     #selecting negative prior boxes
-    neg_indices = findall(ohem_neg_iou .<= max_prior_vals .<= neg_thold)
-    num_negs = size(neg_indices)[1]
-    rand_neg = vec(neg_indices)[randperm(num_negs)][1:ohem_ratio * num_poses]
-    neg_indices = getindex.(max_prior_idx[rand_neg], [1 2])[:, 2]
-
+    neg_indices = getindex.(findall(max_prior_vals .<= neg_thold), [1 2])[:,2]
+    neg_indices = neg_indices[sortperm(losses[neg_indices], rev=true)]
+    neg_indices = neg_indices[1:ohem_ratio * num_poses]
+            
     # gt bbox conversion
     selected_priors = priors[pos_prior_indices,:]
     gt = gt[pos_gt_indices,:] # only positive ground truth values are included
@@ -48,12 +46,11 @@ The parts below are mostly adapted from:
 * https://github.com/Hakuyume/chainer-ssd
 """
 
-function nms(conf, points)
+function nms(scores, points)
     x1 = points[:,1]; y1 = points[:,2]; x2 = points[:,3]; y2 = points[:,4];
-    scores = conf[:,1]
     
     areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
-    order = sortperm(vec(scores), rev=true) 
+    order = sortperm(scores, rev=true) 
     keep = []
     
     while size(order, 1) > 0
@@ -162,24 +159,28 @@ The main motivation is that the network does not directly predict the proposals 
 the combination of prediction and prior anchor box style and rescaling gives the actual
 bounding box and landmark coordinations.
 """
-function decode_points(bboxes, landmarks)
-    priors = _get_priorboxes()
-    priors = reshape(priors, (1, size(priors)...))
+function decode_points(bboxes, landmarks, priors)
+    if length(size(priors)) == 2
+        priors = reshape(priors, (1, size(priors)...))
+    end
     decoded_bboxes = _decode_bboxes(bboxes, priors)
-    # decoded_bboxes .*= img_size
     decoded_landmarks = _decode_landmarks(landmarks, priors)
-    # decoded_landmarks .*= img_size
     return decoded_bboxes, decoded_landmarks
 end
 
 function _decode_bboxes(bbox, priors)
+    if length(size(priors)) == 2
+        priors = reshape(priors, (1, size(priors)...))
+    end
     centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* priors[:,:,3:end]
     lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end])
-    # centers .-= centers ./ 2
     return cat(centers, lengths, dims=3)
 end
 
 function _decode_landmarks(landmarks, priors)
+    if length(size(priors)) == 2
+        priors = reshape(priors, (1, size(priors)...))
+    end
     lm1 = priors[:,:,1:2] .+ landmarks[:, :, 1:2]  .* priors[:,:,3:end]
     lm2 = priors[:,:,1:2] .+ landmarks[:, :, 3:4]  .* priors[:,:,3:end]
     lm3 = priors[:,:,1:2] .+ landmarks[:, :, 5:6]  .* priors[:,:,3:end]

@@ -75,13 +75,15 @@ end
 function (c::Conv2D)(x; train=true)
     # apply dropout only in training
     if train
-        if c.p > 0 x = dropout(x, c.p) end
-        x = conv4(c.w, x, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ c.b
+        if c.p > 0 
+            x = dropout(x, c.p)
+        end
+        x_val = conv4(c.w, x, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ c.b
     else
-        x = conv4(value(c.w), x, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ value(c.b)
+        x_val = conv4(value(c.w), x_val, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ value(c.b)
     end
-    if c.f === nothing return x
-    else return c.f.(x)
+    if c.f === nothing return x_val
+    else return c.f.(x_val)
     end
 end
 

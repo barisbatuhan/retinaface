@@ -44,6 +44,9 @@ mutable struct WIDER_Data
             bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
+        # for running the same data over and over - overfit purposes
+        # files = files[2:1+batch_size]
+    
         return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), dtype)
     end
 end
