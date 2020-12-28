@@ -1,5 +1,6 @@
 include("../core/layers.jl")
 include("../core/blocks.jl")
+include("../../configs.jl")
 
 """
 Non-Deformable Context Head Module Network components for the RetinaFace. 

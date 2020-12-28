@@ -86,11 +86,19 @@ function evaluate_model(rn::ResNet50, x, top=5)
     end
 end
 
-function load_mat_weights(rn::ResNet50, path)
-    conv_w, conv_b, fc_w, fc_b, bn_mom, bn_b, bn_mult, rn.classes = _get_params(path, dtype=rn.dtype)
+function load_mat_weights(rn::ResNet50, path; pre_weights=nothing)
+    
+    conv_w=nothing; conv_b=nothing; fc_w=nothing; fc_b=nothing; 
+    bn_mom=nothing; bn_b=nothing; bn_mult=nothing; rn.classes=nothing;
+    
+    if pre_weights === nothing
+        conv_w, conv_b, fc_w, fc_b, bn_mom, bn_b, bn_mult, rn.classes = _get_params(path, dtype=rn.dtype)
+    else
+        conv_w, conv_b, fc_w, fc_b, bn_mom, bn_b, bn_mult = pre_weights
+    end
     
     # setting fc layer parameters
-    if rn.fc !== nothing
+    if rn.fc !== nothing && fc_w !== nothing
         rn.fc.w = convert(rn.dtype, fc_w)
         rn.fc.b = convert(rn.dtype, fc_b)
     end

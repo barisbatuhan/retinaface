@@ -39,7 +39,7 @@ function read_img(r::Image_Reader, dir, boxes, len)
     end 
             
     bbox_indices = getindex.(findall(new_boxes[1,:] .>= 0)) # images having bboxes
-    img -= avg_img 
+    img .-= avg_img 
     new_boxes = new_boxes[:,bbox_indices]  
     return img, new_boxes
 end

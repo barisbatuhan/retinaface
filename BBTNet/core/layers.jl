@@ -80,7 +80,7 @@ function (c::Conv2D)(x; train=true)
         end
         x_val = conv4(c.w, x, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ c.b
     else
-        x_val = conv4(value(c.w), x_val, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ value(c.b)
+        x_val = conv4(value(c.w), x, padding=c.padding, stride=c.stride, dilation=c.dilation) .+ value(c.b)
     end
     if c.f === nothing return x_val
     else return c.f.(x_val)

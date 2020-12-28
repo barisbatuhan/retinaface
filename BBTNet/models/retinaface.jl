@@ -24,7 +24,7 @@ mutable struct HeadGetter
     function HeadGetter(input_dim, task_len; scale_cnt=5, dtype=Array{Float32})
         layers = []
         for s in 1:scale_cnt
-            push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=false))
+            push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=true))
         end
         return new(layers, task_len)
     end
@@ -33,14 +33,16 @@ end
 
 function (hg::HeadGetter)(xs; train=true)
     proposals = []
+    getter_idx = scale_cnt == 5 ? 1 : 2
     for (i, x) in enumerate(xs)
-        proposal = hg.layers[i](x, train=train)
+        proposal = hg.layers[getter_idx](x, train=train)
         W, H, C, N = size(proposal); T = hg.task_len;
         # converting all proposals from 2D shape (W x H) to 1D
         # here, the order with the construction of prior boxes is preserved
         proposal = reshape(permutedims(proposal, (4, 2, 1, 3)), (N, W*H, C))
         proposal = cat([proposal[:,:,(a-1)*T+1:a*T] for a in 1:num_anchors]..., dims=2)
         push!(proposals, proposal)
+        getter_idx += 1
     end
     if hg.task_len == 2
         return softmax(cat(proposals..., dims=2), dims=3)
@@ -52,7 +54,7 @@ end
 """
 Our actual model that predicts bounding boxes and landmarks.
 """
-struct RetinaFace
+mutable struct RetinaFace
     backbone; fpn; context_module;
     cls_head1; cls_head2;
     bbox_head1; bbox_head2;
@@ -87,7 +89,7 @@ end
 function (model::RetinaFace)(x; p_vals = nothing, mode=0, train=true)
     
     if p_vals === nothing
-        c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)
+        c2, c3, c4, c5 = model.backbone(x, return_intermediate=true, train=train)   
         p_vals = model.fpn([c2, c3, c4, c5], train=train)
         p_vals = model.context_module(p_vals, train=train) 
     end
@@ -145,7 +147,7 @@ function (model::RetinaFace)(x, y, mode=0, train=true, weight_decay=0)
     loss_bbox = h1b_loss + h2b_loss
     loss_pts = h1l_loss + h2l_loss
     
-    loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts - decay_loss
+    loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts + decay_loss
         
     to_print = get_losses_string(loss, loss_cls, loss_bbox, loss_pts, decay_loss)
     print(to_print); open(log_dir, "a") do io write(io, to_print) end; # saving data
@@ -161,7 +163,7 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
     neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
             
     # helper parameters for calculating losses
-    N, P, _ = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(N, P))
+    N, P, _ = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(N, P));
     batch_gt = cat(value(bbox_vals), value(lm_vals), dims=3)
         
     for n in 1:N 
@@ -216,21 +218,29 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
 end
 
 # mode 1 for 2 context heads, mode 2 for only 1 context head
-function predict_model(model::RetinaFace, x; mode=2) 
+function predict_model(model::RetinaFace, x; y=nothing, mode=2) 
     # getting predictions
-    p_vals = model(x, mode=0, train=train); priors = _get_priorboxes();
+    p_vals = model(x, mode=0, train=false); priors = _get_priorboxes();
     
     if mode == 1
-        _, bbox_vals1, _ = model(x, mode=1, p_vals=p_vals, train=false)
+        cls_vals1, bbox_vals1, _ = model(x, mode=1, p_vals=p_vals, train=false)
         priors = _decode_bboxes(convert(Array{Float32}, value(bbox_vals1)), priors)
     end
     
     cls_vals, bbox_vals, lm_vals = model(x, mode=2, p_vals=p_vals, train=false)
     cls_vals = Array(cls_vals); bbox_vals = Array(bbox_vals); lm_vals = Array(lm_vals);
     
+    l_cls = -log.(vec(Array(value(cls_vals[1,:,2]))))
+    gt, pos_idx, neg_idx = encode_gt_and_get_indices(permutedims(y,(2, 1)), priors[:,:], l_cls, 0.2, 0.1)  
+    print(pos_idx, " --> ", cls_vals[1,pos_idx,:],'\n')
+    
+    
     # decoding points to min and max
     bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
     bbox_vals = _to_min_max_form(bbox_vals)  
+    
+    print("Boxes: --> ", bbox_vals[1,pos_idx,:],'\n')
+    print("Landmarks: --> ", lm_vals[1,pos_idx,:],'\n')
     
     bbox_vals[findall(bbox_vals .< 0)] .= 0
     bbox_vals[findall(bbox_vals .> img_size)] .= img_size
@@ -239,12 +249,14 @@ function predict_model(model::RetinaFace, x; mode=2)
         
     for n in 1:size(cls_vals)[1]     
         # confidence threshold check
+        # print(cls_vals[n,:,1])
+        
         indices = findall(cls_vals[n,:,1] .>= conf_level)
         cls_result = cls_vals[n, indices, :]
         bbox_result = bbox_vals[n, indices, :]
         lm_result = lm_vals[n, indices, :]   
         # NMS check
-        indices = nms(vec(cl_result[:,1]), bbox_result)
+        indices = nms(vec(cls_result[:,1]), bbox_result)
         cls_result = cls_result[indices,:]
         bbox_result = bbox_result[indices,:]
         lm_result = lm_result[indices,:]   
@@ -255,7 +267,7 @@ function predict_model(model::RetinaFace, x; mode=2)
     end
     
     print("[INFO] Returning results above confidence level: ", conf_level, ".\n")
-    return cls_results, bbox_results, landmark_results 
+    return cls_results, bbox_results, lm_results 
 end
 
 function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothing)
@@ -294,9 +306,9 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
                 (imgs, boxes), state = iterate(reader, state)
                 iter_no += 1
                 curr_batch += size(imgs)[end]
-                if save_dir !== nothing && mod(iter_no, 650) == 0
-                    save_model(model, save_dir * "model_" * string(e) * "_" * string(curr_batch) * ".jld2")    
-                end   
+                # if save_dir !== nothing && mod(iter_no, 650) == 0
+                #     save_model(model, save_dir * "model_" * string(e) * "_" * string(curr_batch) * ".jld2")    
+                # end   
             else
                 if save_dir !== nothing 
                     save_model(model, save_dir * "model_" * string(e) * ".jld2")

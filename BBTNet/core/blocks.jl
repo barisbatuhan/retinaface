@@ -50,7 +50,7 @@ function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride
     return Residual_1x3x1(
         ds_layer,
         ConvBn(1, 1, input_dim,       filter_sizes[1], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
-        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu,  padding=1),
+        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, padding=1),
         ConvBn(1, 1, filter_sizes[2], filter_sizes[3], init=init, bias=bias, dtype=dtype, pdrop=pdrop),
         dtype
     )
