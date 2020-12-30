@@ -43,11 +43,10 @@ function (hg::HeadGetter)(xs; train=true)
         # converting all proposals from 4D shape to 3D   
         proposal = permutedims(proposal, (3, 1, 2, 4))
         proposal = reshape(proposal, (T, A, N))
-        proposal = permutedims(proposal, (3, 2, 1))
         push!(proposals, proposal)
     end
     if T == 2
-        return softmax(cat(proposals..., dims=2), dims=3)
+        return softmax(cat(proposals..., dims=2), dims=1)
     else
         return cat(proposals..., dims=2)
     end
@@ -165,8 +164,8 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
     neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
             
     # helper parameters for calculating losses
-    N, P, _ = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(N, P));
-    batch_gt = cat(value(bbox_vals), value(lm_vals), dims=3)
+    T, P, N = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(P, N));
+    batch_gt = cat(value(bbox_vals), value(lm_vals), dims=1)
         
     for n in 1:N 
         # loop for each input in batch, all inputs may have different box counts
@@ -174,28 +173,27 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
             continue # if the cropped image has no faces
         end 
             
-        l_cls = -log.(vec(Array(value(cls_vals[n,:,2]))))
-        rev_y = permutedims(y[n],(2, 1)); prior = nothing;
+        l_cls =-log.(Array(value(cls_vals)))[conf_indices[2],:,n]; gt = y[n]; prior = nothing;
         
-        if length(size(priors)) > 2 prior = priors[n, :, :]
+        if length(size(priors)) > 2 prior = priors[:,:,n]
         else prior = priors
         end
         
-        gt, pos_idx, neg_idx = encode_gt_and_get_indices(rev_y, prior, l_cls, pos_thold, neg_thold)   
+        gt, pos_idx, neg_idx = encode_gt_and_get_indices(gt, prior, l_cls, pos_thold, neg_thold)   
             
         if pos_idx !== nothing 
             # if boxes with high enough IOU are found                
-            lm_indices = getindex.(findall(gt[:,15] .>= 0))
+            lm_indices = getindex.(findall(gt[15,:] .>= 0))
             gt = convert(model.dtype, gt)
                 
             if size(lm_indices, 1) > 0 
                 # counting only the ones with landmark data 
-                batch_gt[n,pos_idx[lm_indices],5:14] = gt[lm_indices,5:14]
-                lmN += size(lm_indices, 1)
+                batch_gt[5:14,pos_idx[lm_indices],n] = gt[5:14,lm_indices]
+                lmN += length(lm_indices) # check here!
             end
                 
-            batch_gt[n,pos_idx,1:4] = gt[:,1:4]; bboxN += size(pos_idx, 1);          
-            batch_cls[n, pos_idx] .= 1; batch_cls[n, neg_idx] .= 2; 
+            batch_gt[1:4,pos_idx,n] = gt[1:4,:]; bboxN += length(pos_idx);          
+            batch_cls[pos_idx,n] .= conf_indices[1]; batch_cls[neg_idx,n] .= conf_indices[2]; 
         end 
     end
         
@@ -204,23 +202,20 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
     lmN = lmN == 0 ? 1 : lmN
             
     # classification negative log likelihood loss
-    cls_vals = reshape(permutedims(cls_vals, (3, 2, 1)), (2, N*P))
-    batch_cls = vec(permutedims(batch_cls, (2, 1)))    
+    cls_vals = reshape(cls_vals, (2, N*P))
+    batch_cls = vec(batch_cls) 
     loss_cls = nll(cls_vals, batch_cls)
-    
-    # regression loss of the box centers, width and height
-    loss_bbox = smooth_l1(abs.(batch_gt[:,:,1:4] .- bbox_vals)) / bboxN
-    
-    # box center and all landmark points regression loss per point
-    loss_pts = smooth_l1(abs.(batch_gt[:,:,5:end] .- lm_vals)) / lmN   
-    
     if (isinf(value(loss_cls)) || isnan(value(loss_cls))) loss_cls = 0 end 
+    # regression loss of the box centers, width and height
+    loss_bbox = smooth_l1(abs.(batch_gt[1:4,:,:] - bbox_vals)) / bboxN
+    # box center and all landmark points regression loss per point
+    loss_pts = smooth_l1(abs.(batch_gt[5:end,:,:] - lm_vals)) / lmN   
     
     return loss_cls, loss_bbox, loss_pts
 end
 
 # mode 1 for 2 context heads, mode 2 for only 1 context head
-function predict_model(model::RetinaFace, x; y=nothing, mode=2) 
+function predict_model(model::RetinaFace, x; mode=2) 
     # getting predictions
     p_vals = model(x, mode=0, train=false); priors = _get_priorboxes();
     
@@ -234,33 +229,21 @@ function predict_model(model::RetinaFace, x; y=nothing, mode=2)
     
     # decoding points to min and max
     bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
-    bbox_vals = _to_min_max_form(bbox_vals)  
-    
-    iou_vals = iou(permutedims(y,(2, 1))[:,1:4], bbox_vals[1,:,:])
-    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2)
-    pos_idx = getindex.(max_gt_idx, [1 2])[:, 2]
-    print(pos_idx,"\n")
-    
-    print("Conf:", " --> ", cls_vals[1,pos_idx,:],'\n')
-    print("Boxes: --> ", bbox_vals[1,pos_idx,:],'\n')
-    print("Landmarks: --> ", lm_vals[1,pos_idx,:],'\n')
-    
-    bbox_vals[findall(bbox_vals .< 0)] .= 0
-    bbox_vals[findall(bbox_vals .> img_size)] .= img_size
+    bbox_vals = _to_min_max_form(bbox_vals)
                
     cls_results = []; bbox_results = []; lm_results = [];
         
-    for n in 1:size(cls_vals)[1]     
+    for n in 1:size(cls_vals)[end]     
         # confidence threshold check
-        indices = findall(cls_vals[n,:,2] .>= conf_level)
-        cls_result = cls_vals[n, indices, :]
-        bbox_result = bbox_vals[n, indices, :]
-        lm_result = lm_vals[n, indices, :]   
+        indices = findall(cls_vals[conf_indices[1],:,n] .>= conf_level)
+        cls_result = cls_vals[:,indices,n]
+        bbox_result = bbox_vals[:,indices,n]
+        lm_result = lm_vals[:,indices,n]   
         # NMS check
-        indices = nms(vec(cls_result[:,1]), bbox_result)
-        cls_result = cls_result[indices,:]
-        bbox_result = bbox_result[indices,:]
-        lm_result = lm_result[indices,:]   
+        indices = nms(vec(cls_result[conf_indices[1],:]), bbox_result)
+        cls_result = cls_result[:,indices]
+        bbox_result = bbox_result[:,indices]
+        lm_result = lm_result[:,indices]   
         # pushing results
         push!(cls_results, cls_result)
         push!(bbox_results, bbox_result)
@@ -306,10 +289,7 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
             if !(length(state) == 0 || state === nothing)
                 (imgs, boxes), state = iterate(reader, state)
                 iter_no += 1
-                curr_batch += size(imgs)[end]
-                # if save_dir !== nothing && mod(iter_no, 650) == 0
-                #     save_model(model, save_dir * "model_" * string(e) * "_" * string(curr_batch) * ".jld2")    
-                # end   
+                curr_batch += size(imgs)[end]  
             else
                 if save_dir !== nothing 
                     save_model(model, save_dir * "model_" * string(e) * ".jld2")

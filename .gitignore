@@ -2,6 +2,9 @@
 data/*/
 weights/*.mat
 weights/*.jld2
+weights/*.jld
+weights/*.params
+weights/*.json
 
 # Extra Cache Files
 .DS_Store

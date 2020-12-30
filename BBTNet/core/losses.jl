@@ -11,8 +11,8 @@ Smooth L1 Loss.
 """
 
 function smooth_l1(x; beta=1)
-    low_idx = findall(Array(x) .< beta)
-    high_idx = findall(Array(x) .>= beta)
+    low_idx = findall(Array(value(x)) .< beta)
+    high_idx = findall(Array(value(x)) .>= beta)
     loss_sum = sum(x[high_idx] .- 0.5)
     loss_sum += sum(0.5 .* (x[low_idx].^2))
     return loss_sum

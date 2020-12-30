@@ -12,33 +12,33 @@ aflw_path       = "/datasets/aflw/"
 
 # Weight Paths
 r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
-save_dir        = "./weights/decayed_chead_ohem1__"
+save_dir        = "./weights/"
 # save_dir        = nothing
-# load_path       = "./weights/new_loss_model_1.jld2"
+# load_path       = "./weights/PyTorch_R50_mode2_anchors3.jld2"
 load_path       = nothing
 
 # Extra Paths
-log_dir         = "../ohem1_decayed_chead_log.txt"
+log_dir         = "../chead_log_mode1.txt"
 
 # Image Manipulation Metrics
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
-# avg_img         = channelview(Images.imresize(load("./data/avgImg.jpg"), (img_size, img_size)))
+# avg_img = channelview(Images.imresize(load("./data/avgImg.jpg"), (img_size, img_size))) # for resnet classification
 avg_img         = (123, 117, 104)
-# avg_img         = (104/255, 117/255, 123/255)
 
 # Anchor Metrics
-num_anchors     = 3
-scale_cnt       = 3 # 5
+scale_cnt       = 5 # 3
+num_anchors     = nothing # defined below
 anchor_info     = nothing # defined below
+conf_indices    = [2, 1] # positive, negative
+variances       = [0.2, 0.1] # scaler for width and height and for points
 
 # Loss Calculation Metrics
-scale           = 2^(1/3)
 head1_pos_iou   = 0.7
 head1_neg_iou   = 0.3
 head2_pos_iou   = 0.5
 head2_neg_iou   = 0.4
-ohem_ratio      = 1 #3
+ohem_ratio      = 3
 lambda1         = 2 #1
 lambda2         = 1
 
@@ -56,7 +56,7 @@ start_epoch     = 1
 # 0  --> baseline forward, 
 # 1  --> using both context heads for forward, 
 # 2  --> second context head forward, 
-mode            = 2
+mode            = 1
 
 # Testing Parameters
 conf_level      = 0.9
@@ -69,7 +69,8 @@ run_gpu = true
 
 atype = run_gpu ? KnetArray{Float32} : Array{Float32}
 if scale_cnt == 5
-    anchor_info     = [ 
+    num_anchors = 3
+    anchor_info = [ 
         Dict([("stride", 4), ("anchors", [16, 20.16, 25.40])]),
         Dict([("stride", 8), ("anchors", [32, 40.32, 50.80])]),
         Dict([("stride", 16), ("anchors", [64, 80.63, 101.59])]),
@@ -77,8 +78,8 @@ if scale_cnt == 5
         Dict([("stride", 64), ("anchors", [256, 322.54, 406.37])])
     ]
 else
-    num_anchors     = 2
-    anchor_info     = [ 
+    num_anchors = 2
+    anchor_info = [ 
         Dict([("stride", 8), ("anchors", [16, 32])]),
         Dict([("stride", 16), ("anchors", [64, 128])]),
         Dict([("stride", 32), ("anchors", [256, 512])])
