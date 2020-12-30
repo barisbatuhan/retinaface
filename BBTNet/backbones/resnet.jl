@@ -57,8 +57,9 @@ function ResNet50(;input_dim=3, dtype=Array{Float32}, pdrop=0, bias=false, inclu
 end
 
 function (rn::ResNet50)(x; train=true, return_intermediate=true)
-    c2 = rn.layer2(rn.layer1(x, train=train), train=train)
-    c3 = rn.layer3(c2, train=train)
+    c1 = rn.layer1(x, train=train)
+    c2 = rn.layer2(c1, train=train) 
+    c3 = rn.layer3(c2, train=train)  
     c4 = rn.layer4(c3, train=train)
     c5 = rn.layer5(c4, train=train)
     if rn.fc === nothing
@@ -202,21 +203,3 @@ function _get_params(path; dtype=Array{Float32})
     end
     return conv_w, conv_b, fc_w, fc_b, bn_mom, bn_b, bn_mult, classes_imagenet
 end 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

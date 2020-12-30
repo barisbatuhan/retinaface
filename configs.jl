@@ -24,7 +24,8 @@ log_dir         = "../ohem1_decayed_chead_log.txt"
 crop_ratios     = [0.3, 0.45, 0.6, 0.8, 1.0]
 img_size        = 640
 # avg_img         = channelview(Images.imresize(load("./data/avgImg.jpg"), (img_size, img_size)))
-avg_img         = (104/255, 117/255, 123/255)
+avg_img         = (123, 117, 104)
+# avg_img         = (104/255, 117/255, 123/255)
 
 # Anchor Metrics
 num_anchors     = 3
@@ -78,8 +79,8 @@ if scale_cnt == 5
 else
     num_anchors     = 2
     anchor_info     = [ 
-        Dict([("stride", 8), ("anchors", [32, 40.32])]),
-        Dict([("stride", 16), ("anchors", [64, 80.63])]),
-        Dict([("stride", 32), ("anchors", [128, 161.26])])
+        Dict([("stride", 8), ("anchors", [16, 32])]),
+        Dict([("stride", 16), ("anchors", [64, 128])]),
+        Dict([("stride", 32), ("anchors", [256, 512])])
     ]
 end

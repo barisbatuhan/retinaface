@@ -88,12 +88,12 @@ function iterate(data::WIDER_Data, state=ifelse(
         idx = 1
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
-            img, box = read_img(data.reader, img_dir, data.bboxes[img_path], img_size)
+            img, box = read_img(img_dir, img_size, r=data.reader, boxes=data.bboxes[img_path])
             push!(labels, box)
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end
-        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4))) .* 255
+        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
         return (imgs_arr, labels), state[data.batch_size+1:end]
     end
 end

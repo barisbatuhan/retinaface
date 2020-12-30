@@ -34,17 +34,19 @@ end
 function (hg::HeadGetter)(xs; train=true)
     proposals = []
     getter_idx = scale_cnt == 5 ? 1 : 2
+    T = hg.task_len
     for (i, x) in enumerate(xs)
         proposal = hg.layers[getter_idx](x, train=train)
-        W, H, C, N = size(proposal); T = hg.task_len;
-        # converting all proposals from 2D shape (W x H) to 1D
-        # here, the order with the construction of prior boxes is preserved
-        proposal = reshape(permutedims(proposal, (4, 2, 1, 3)), (N, W*H, C))
-        proposal = cat([proposal[:,:,(a-1)*T+1:a*T] for a in 1:num_anchors]..., dims=2)
-        push!(proposals, proposal)
         getter_idx += 1
+        W, H, C, N = size(proposal); A = Int(W*H*(C/T));
+        
+        # converting all proposals from 4D shape to 3D   
+        proposal = permutedims(proposal, (3, 1, 2, 4))
+        proposal = reshape(proposal, (T, A, N))
+        proposal = permutedims(proposal, (3, 2, 1))
+        push!(proposals, proposal)
     end
-    if hg.task_len == 2
+    if T == 2
         return softmax(cat(proposals..., dims=2), dims=3)
     else
         return cat(proposals..., dims=2)
@@ -230,28 +232,27 @@ function predict_model(model::RetinaFace, x; y=nothing, mode=2)
     cls_vals, bbox_vals, lm_vals = model(x, mode=2, p_vals=p_vals, train=false)
     cls_vals = Array(cls_vals); bbox_vals = Array(bbox_vals); lm_vals = Array(lm_vals);
     
-    l_cls = -log.(vec(Array(value(cls_vals[1,:,2]))))
-    gt, pos_idx, neg_idx = encode_gt_and_get_indices(permutedims(y,(2, 1)), priors[:,:], l_cls, 0.2, 0.1)  
-    print(pos_idx, " --> ", cls_vals[1,pos_idx,:],'\n')
-    
-    
     # decoding points to min and max
     bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
     bbox_vals = _to_min_max_form(bbox_vals)  
     
+    iou_vals = iou(permutedims(y,(2, 1))[:,1:4], bbox_vals[1,:,:])
+    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=2)
+    pos_idx = getindex.(max_gt_idx, [1 2])[:, 2]
+    print(pos_idx,"\n")
+    
+    print("Conf:", " --> ", cls_vals[1,pos_idx,:],'\n')
     print("Boxes: --> ", bbox_vals[1,pos_idx,:],'\n')
     print("Landmarks: --> ", lm_vals[1,pos_idx,:],'\n')
     
     bbox_vals[findall(bbox_vals .< 0)] .= 0
     bbox_vals[findall(bbox_vals .> img_size)] .= img_size
                
-    cls_results = []; bbox_results = []; lm_results = []
+    cls_results = []; bbox_results = []; lm_results = [];
         
     for n in 1:size(cls_vals)[1]     
         # confidence threshold check
-        # print(cls_vals[n,:,1])
-        
-        indices = findall(cls_vals[n,:,1] .>= conf_level)
+        indices = findall(cls_vals[n,:,2] .>= conf_level)
         cls_result = cls_vals[n, indices, :]
         bbox_result = bbox_vals[n, indices, :]
         lm_result = lm_vals[n, indices, :]   

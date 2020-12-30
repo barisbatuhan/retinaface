@@ -11,13 +11,13 @@ mutable struct Image_Reader
     end
 end
 
-function read_img(r::Image_Reader, dir, boxes, len)
-    img = channelview(load(dir))
-    
+# r is the reader object
+function read_img(dir, len; boxes=nothing, r=nothing)
+    img = convert(Array{Int64}, rawview(channelview(load(dir))))
     if boxes === nothing
         img, _, maxlen = squaritize_img(img, nothing)
-        img, _ = resize_square_img(img, nothing, len, maxlen) 
-        return img -= avg_img 
+        img, _ = resize_square_img(img, nothing, len, maxlen)     
+        return img .- avg_img
     end
     
     new_boxes = deepcopy(boxes)

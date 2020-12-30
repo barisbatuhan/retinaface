@@ -27,7 +27,10 @@ function ConvBn(w1::Int, w2::Int, input_dim::Int, output_dim::Int; init=kaiming_
 end
 
 function (cbr::ConvBn)(x; train=true)
-    x_val = cbr.bn(cbr.conv(x, train=train), train=train)
+    x_val = cbr.conv(x, train=train)
+    # print("Sum Conv: ", sum(Array(value(abs.(x_val)))) / prod(size(x_val)), "\n")
+    x_val = cbr.bn(x_val, train=train)
+    # print("Sum BN: ", sum(Array(value(abs.(x_val)))) / prod(size(x_val)), "\n")
     if cbr.f === nothing return x_val
     elseif cbr.f == "leaky_relu" return max.(cbr.alpha .* x_val, x_val)
     else return cbr.f.(x_val)
@@ -49,8 +52,8 @@ function Residual_1x3x1(input_dim, filter_sizes; downsample=false, ds_3x3_stride
     
     return Residual_1x3x1(
         ds_layer,
-        ConvBn(1, 1, input_dim,       filter_sizes[1], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, stride=ds_3x3_stride),
-        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, padding=1),
+        ConvBn(1, 1, input_dim,       filter_sizes[1], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu),
+        ConvBn(3, 3, filter_sizes[1], filter_sizes[2], init=init, bias=bias, dtype=dtype, pdrop=pdrop, f=relu, padding=1, stride=ds_3x3_stride),
         ConvBn(1, 1, filter_sizes[2], filter_sizes[3], init=init, bias=bias, dtype=dtype, pdrop=pdrop),
         dtype
     )

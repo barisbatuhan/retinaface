@@ -49,21 +49,33 @@ The parts below are mostly adapted from:
 function nms(scores, points)
     x1 = points[:,1]; y1 = points[:,2]; x2 = points[:,3]; y2 = points[:,4];
     
-    areas = (x2 - x1 .+ 1) .* (y2 - y1 .+ 1)
+    areas = (x2 - x1) .* (y2 - y1)
     order = sortperm(scores, rev=true) 
     keep = []
     
+    for i in 1:size(order, 1)
+        if areas[order[i]] == 0
+            order[i] = -1
+        end
+    end
+    
+    order = order[findall(order .> 0)]
+    
     while size(order, 1) > 0
         i = order[1]
-        push!(keep, i)
-        if size(order, 1) == 1 break end
-        iou_vals = iou(points[i:i,:], points[order[2:end],:])
-        inds = getindex.(findall(iou_vals .<= nms_threshold), [1 2])[:, 2]
-        if size(inds, 1) == 0 
-            break
-        else 
-            inds = inds[1]
-            order = order[inds+1:end]
+        if areas[i] > 0
+            push!(keep, i)
+            if size(order, 1) == 1 break end
+            iou_vals = iou(points[i:i,:], points[order[2:end],:])
+            inds = getindex.(findall(iou_vals .<= nms_threshold), [1 2])[:, 2]
+            if size(inds, 1) == 0 
+                break
+            else 
+                inds = inds[1]
+                order = order[inds+1:end]
+            end
+        else
+            order = order[2:end]
         end
     end
     return keep
@@ -131,6 +143,28 @@ end
 """
 Returns the anchor boxes with their center_x, center_y, width, height information.
 """
+# function _get_priorboxes()
+#     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
+#     num_proposals = num_anchors * sum([i*i for i in feature_maps])
+#     anchors = zeros(num_proposals, 4)
+
+#     counter = 1
+#     for (idx, f) in enumerate(feature_maps)
+#         scaler = anchor_info[idx]["stride"]
+#         for h in 1:f
+#             cy = (h - 0.5) * scaler
+#             for w in 1:f
+#                 cx = (w - 0.5) * scaler
+#                 for s in anchor_info[idx]["anchors"]
+#                     anchors[counter,:] = [cx cy s s]
+#                     counter += 1
+#                 end
+#             end
+#         end
+#     end
+#     return anchors
+# end
+
 function _get_priorboxes()
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
@@ -139,11 +173,12 @@ function _get_priorboxes()
     counter = 1
     for (idx, f) in enumerate(feature_maps)
         scaler = anchor_info[idx]["stride"]
-        for h in 1:f
+        for h in 1:f   
             cy = (h - 0.5) * scaler
             for w in 1:f
                 cx = (w - 0.5) * scaler
                 for s in anchor_info[idx]["anchors"]
+                    # print(cx, " ", cy, " ", s, " ", s, "\n")
                     anchors[counter,:] = [cx cy s s]
                     counter += 1
                 end
@@ -168,23 +203,51 @@ function decode_points(bboxes, landmarks, priors)
     return decoded_bboxes, decoded_landmarks
 end
 
+
 function _decode_bboxes(bbox, priors)
     if length(size(priors)) == 2
         priors = reshape(priors, (1, size(priors)...))
     end
-    centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* priors[:,:,3:end]
-    lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end])
+    centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* 0.1 .* priors[:,:,3:end]
+    lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end] .* 0.2)
+#     bbox[:,:,1:2] = centers - lengths ./2
+#     bbox[:,:,3:4] = centers + lengths ./2
     return cat(centers, lengths, dims=3)
+#     return bbox
 end
 
 function _decode_landmarks(landmarks, priors)
     if length(size(priors)) == 2
         priors = reshape(priors, (1, size(priors)...))
     end
-    lm1 = priors[:,:,1:2] .+ landmarks[:, :, 1:2]  .* priors[:,:,3:end]
-    lm2 = priors[:,:,1:2] .+ landmarks[:, :, 3:4]  .* priors[:,:,3:end]
-    lm3 = priors[:,:,1:2] .+ landmarks[:, :, 5:6]  .* priors[:,:,3:end]
-    lm4 = priors[:,:,1:2] .+ landmarks[:, :, 7:8]  .* priors[:,:,3:end]
-    lm5 = priors[:,:,1:2] .+ landmarks[:, :, 9:10] .* priors[:,:,3:end]
+
+    lm1 = priors[:,:,1:2] .+ landmarks[:, :, 1:2]  .* 0.1 .* priors[:,:,3:end]
+    lm2 = priors[:,:,1:2] .+ landmarks[:, :, 3:4]  .* 0.1 .* priors[:,:,3:end]
+    lm3 = priors[:,:,1:2] .+ landmarks[:, :, 5:6]  .* 0.1 .* priors[:,:,3:end]
+    lm4 = priors[:,:,1:2] .+ landmarks[:, :, 7:8]  .* 0.1 .* priors[:,:,3:end]
+    lm5 = priors[:,:,1:2] .+ landmarks[:, :, 9:10] .* 0.1 .* priors[:,:,3:end]
     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
 end
+
+# variances = [0.1, 0.2]
+
+# function _decode_bboxes(bbox, priors)
+#     if length(size(priors)) == 2
+#         priors = reshape(priors, (1, size(priors)...))
+#     end
+#     centers = priors[:,:,1:2] .+ bbox[:,:,1:2] .* priors[:,:,3:end]
+#     lengths = priors[:,:,3:end] .* exp.(bbox[:, :, 3:end])
+#     return cat(centers, lengths, dims=3)
+# end
+
+# function _decode_landmarks(landmarks, priors)
+#     if length(size(priors)) == 2
+#         priors = reshape(priors, (1, size(priors)...))
+#     end
+#     lm1 = priors[:,:,1:2] .+ landmarks[:, :, 1:2]  .* priors[:,:,3:end]
+#     lm2 = priors[:,:,1:2] .+ landmarks[:, :, 3:4]  .* priors[:,:,3:end]
+#     lm3 = priors[:,:,1:2] .+ landmarks[:, :, 5:6]  .* priors[:,:,3:end]
+#     lm4 = priors[:,:,1:2] .+ landmarks[:, :, 7:8]  .* priors[:,:,3:end]
+#     lm5 = priors[:,:,1:2] .+ landmarks[:, :, 9:10] .* priors[:,:,3:end]
+#     return cat(lm1, lm2, lm3, lm4, lm5, dims=3)
+# end
