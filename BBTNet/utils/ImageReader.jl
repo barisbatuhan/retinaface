@@ -13,7 +13,9 @@ end
 
 # r is the reader object
 function read_img(dir, len; boxes=nothing, r=nothing)
+    
     img = convert(Array{Int64}, rawview(channelview(load(dir))))
+    
     if boxes === nothing
         img, _, maxlen = squaritize_img(img, nothing)
         img, _ = resize_square_img(img, nothing, len, maxlen)     
@@ -22,6 +24,7 @@ function read_img(dir, len; boxes=nothing, r=nothing)
     
     new_boxes = deepcopy(boxes)
     if r.augment 
+        img = convert(Array{Float32}, img) ./ 255
         roi = _find_roi(r, img)
         # horizontal flip
         if rand() < 0.5 img, new_boxes = flip_horizontal(img, new_boxes) end
@@ -32,6 +35,7 @@ function read_img(dir, len; boxes=nothing, r=nothing)
         # resizing to <len>
         img, new_boxes = resize_square_img(img, new_boxes, len, (roi[3] - roi[1]))
         
+        img .*= 255
     else
         img, new_boxes, maxlen = squaritize_img(img, new_boxes)
         img, new_boxes = resize_square_img(img, new_boxes, len, maxlen) 

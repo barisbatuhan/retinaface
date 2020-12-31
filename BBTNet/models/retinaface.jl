@@ -47,6 +47,7 @@ function (hg::HeadGetter)(xs; train=true)
     end
     if T == 2
         return softmax(cat(proposals..., dims=2), dims=1)
+        # return cat(proposals..., dims=2)
     else
         return cat(proposals..., dims=2)
     end
@@ -227,9 +228,18 @@ function predict_model(model::RetinaFace, x; mode=2)
     cls_vals, bbox_vals, lm_vals = model(x, mode=2, p_vals=p_vals, train=false)
     cls_vals = Array(cls_vals); bbox_vals = Array(bbox_vals); lm_vals = Array(lm_vals);
     
+#     l_cls =-log.(Array(value(cls_vals)))[conf_indices[2],:,1];
+#     gt, pos_idx, neg_idx = encode_gt_and_get_indices(y, priors, l_cls, 0.2, 0.1)  
+    
     # decoding points to min and max
     bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
     bbox_vals = _to_min_max_form(bbox_vals)
+    
+#     print("Indices --> ", pos_idx, "\n")
+#     print("Classvals --> ", cls_vals[:,pos_idx,1],'\n')    
+#     print("Boxes: --> ", bbox_vals[:,pos_idx,1],'\n')
+#     print("Landmarks: --> ", lm_vals[:,pos_idx,1],'\n')
+    
                
     cls_results = []; bbox_results = []; lm_results = [];
         
@@ -257,6 +267,7 @@ end
 function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothing)
     open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n") end;
     
+    curr_lr = lrs[1]; lr_change = (lrs[2] - lrs[1]) / lr_change_epoch[1];
     for e in start_epoch:num_epochs
         
         (imgs, boxes), state = iterate(reader)
@@ -272,19 +283,17 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
                 open(log_dir, "a") do io write(io, to_print) end;
             end
             
-            if e < lr_change_epoch[1]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
-                    lr=lrs[1], gamma=momentum)
-            elseif e < lr_change_epoch[2]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
-                    lr=lrs[2], gamma=momentum)
-            elseif e < lr_change_epoch[3]
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
-                    lr=lrs[3], gamma=momentum)
-            else
-                momentum!(model, [(imgs, boxes, mode, true, weight_decay)], 
-                    lr=lrs[4], gamma=momentum)
+            # Adjusting LR for each step
+            curr_lr += + lr_change  
+            if iter_no == 1 && e == lr_change_epoch[1]
+                curr_lr = lrs[2]; lr_change = (lrs[3] - lrs[2]) / (lr_change_epoch[2] - lr_change_epoch[1]);
+            elseif iter_no == 1 && e == lr_change_epoch[2]
+                curr_lr = lrs[3]; lr_change = (lrs[4] - lrs[3]) / (lr_change_epoch[3] - lr_change_epoch[2]); 
+            elseif iter_no == 1 && e == lr_change_epoch[3]
+                curr_lr = lrs[4]; lr_change = 0; 
             end
+            # Updating the model
+            momentum!(model, [(imgs, boxes, mode, true, weight_decay)], lr=curr_lr, gamma=momentum)
                
             if !(length(state) == 0 || state === nothing)
                 (imgs, boxes), state = iterate(reader, state)

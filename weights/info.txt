@@ -1,5 +1,14 @@
-============================================================================================================
+========================================================================================================================================================
 After the full implementation, the links for the model weights will be shared in this text file:
-============================================================================================================
-* ResNet50: https://www.vlfeat.org/matconvnet/models/imagenet-resnet-50-dag.mat
---> Please download and put inside <knet_dir>/data/imagenet/
+========================================================================================================================================================
+- ResNet50: https://www.vlfeat.org/matconvnet/models/imagenet-resnet-50-dag.mat
+
+- For other pretrained models, you can check the following link: https://drive.google.com/drive/folders/1GTyTgfmAG2BXvbDDy5n9Jv2ajv1IvWaw?usp=sharing
+
+- Setups in configs.jl for pretrained models:
+
+1) PyTorch_R50_mode2_laterals3.jld2
+
+** scale_cnt = 3
+** mode = 2
+** al other parameters are in their default values

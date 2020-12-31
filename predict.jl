@@ -6,10 +6,8 @@ val_data = WIDER_Data(wf_path * "val/", wf_labels_path * "val/", train=true, bat
 (imgs, boxes), state = iterate(val_data)
 
 model = RetinaFace(dtype=atype)
-c, b, l = model(imgs, nothing, mode, false, 0)
+c, b, l = model(imgs, mode=mode, train=false)
 
-# image conversion to actual shape and cpu type for the first image in the prediction
-# img_cpu = Array(permutedims(imgs[:,:,:,1], (3,2,1)))
-# combined_pts = permutedims(Array(cat(b[1], l[1], dims=2)), (2, 1))
-
-# draw_boxes_and_landmarks(img_cpu, combined_pts)
+print("Confidences: ", c, "\n")
+print("Boxes: ", b, "\n")
+print("Landmarks: ", l, "\n")

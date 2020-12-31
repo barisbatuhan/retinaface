@@ -17,41 +17,78 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * [**Final Presentation**](https://docs.google.com/presentation/d/1lBw68_IdbSe_0n2KAlupRnDulvfzNrUMwx3sBkNl9p8/edit?usp=sharing)
 
+* [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
+
 * [**Data Sheet**](https://docs.google.com/spreadsheets/d/1Si1-91wCge3aq7liSTSFxGuJb3fO_-xHlAIzQkaLEyU/edit?usp=sharing) 
 
-* [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
+
+## Sample Result
+
+![Sample Image Detection Result](./data/evaluated.jpg)
+
+## Requirements
+
+* Julia >= v1.5.3 (latest is preferred)
+
+* Knet >= v1.4.5 (latest is preferred)
 
 ## First Setup
 
 * All the packages required to be installed are found under `setup.jl`. To install packages to a virtual environment you can directly run that source file (you can also type `make setup` to run it), or you can install the packages in that file manually to run this project on the actual device.
 
-* All of the implementation steps are summarized with their codes in the `progress.ipynb` notebook and `main.jl` file. According to your preferences, please check these files before give a deeper look on this repository. For running `main.jl` file, a **makefile** is also included to the repository. By using the commands there, you can either run the project with a virtual environment by typing `make run-virtual` or you can directly run by entering `make run` command.
+* All of the implementation steps are summarized with their codes in the `progress.ipynb` notebook. Please check this file before giving a deeper look on this repository. 
+
+* To train or predict boxes and landmarks by using this repository, please initialize the parameters in `configs.jl` first. Especially please assign correct paths for the dataset directory.
+
+* To train by using system setup, either run `make train` or `julia train.jl`. To train with the virtual environment you setup by running `setup.jl` file, type `make train-virtual`.
+
+* Also to predict by using system setup, either run `make predict` or `julia predict.jl`. To predict with the virtual environment you setup by running `setup.jl` file, type `make predict-virtual`. By default, this process predicts and prints the bounding boxes in the first batch of the data. You can change `predict.jl` for predicting custom images.
 
 **Note:** In order to use the `make` command, the operating system should be a linux based distro or macOS. To use this command on Windows 10, please install [**GNU Make**](https://www.gnu.org/software/make/).
 
+## Links
+
+* [WIDERFACE](http://shuoyang1213.me/WIDERFACE/)
+
+* [WIDERFACE Landmark Annotations](https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0)
+
+* [AFLW](https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw/)
+
+* [FDDB](http://vis-www.cs.umass.edu/fddb/)
+
+* [ImageNet Weights for ResNet50](https://www.vlfeat.org/matconvnet/models/imagenet-resnet-50-dag.mat)
+
+* [Weights to Pretrained Models](https://drive.google.com/drive/folders/1GTyTgfmAG2BXvbDDy5n9Jv2ajv1IvWaw?usp=sharing)
+
+**Note:** You can find the default `configs.jl` parameters of each of the pretrained models in [**this file**](./weights/info.txt).
+
+## Demonstration of the Network
+
+![Network Graph](./data/network.JPG)
+
 ## Progress So Far
 
-* All image readings and augmentation processes are implemented for WIDERFACE dataset. Please check `BBTNet/utils/*.jl` and `BBTNet/datasets/WIDERFACE.jl` for the source code.
+* The entire training and predicting pipelines are implemented. An already pretrained model is created by loading the weights from the [**PyTorch implementation of this paper**](https://github.com/biubug6/Pytorch_Retinaface). 
 
-* Batch Normalization, Convolution, Dense layers  are implemented under `BBTNet/core/layers.jl` and Residual, Conv+BatchNorm and other special blocks are added to `BBTNet/core/blocks.jl`. 
+* Cascaded structure of the model is also included to the model. The same context modules are used but the multitask heads are different for each cascaded structure.
 
-* The entire network is implemented, which consists of ResNet50 backbone, Feature Pyramid Network (upsampling), a Convolutional Structured Context Head Module (SSH based), 1x1 Convolutional Proposal Heads.
+* The model supports both implementations with 3 and 5 lateral connections. However, the only backbone available currently is ResNet50.
 
-*  For calculating the loss, intersection of union values for each ground truth box and proposed boxes should be calculated. This IOU calculation and helper methods are implemented.
+## Results & Evaluation
 
-* A notebook called `progress.ipynb` and a source file named `main.jl` are created for summarizing the completed steps and providing a short guidance for the usage of the commands.
-
-* The prediction process is implemented completely. However, there are no pretrained weights so far. Therefore, the model makes random bounding box proposals.
-
-* A makefile is created for running the project and setting up the repository.
+![Work in Progress](./data/work_in_progress.jpg)
 
 ## What To Do Next
 
-* The final loss function.
+* Support other datasets (FDDB and AFLW) in addition to the WIDERFACE dataset.
 
-* Loading pretrained weights from already existing python based repositories.
+* Implement the evaluation metrics: average AP and Area Under Curve (AUC), Failure Rate and Normalized Mean Error (NME).
 
-* Multiple GPU support.
+* Make sure the model can be trained from scratch and train the model for 5 lateral connections with cascaded structure enabled.
 
-* Improvements on image reading and augmenting.
+* Instead of the normal Convolutional Layers in Context Modules, implement [**Deformable Convolutional Layers**](https://arxiv.org/abs/1703.06211) and retrain the model with this structure.
+
+* Add different backbones for shorter processing times, such as MobileNet.
+
+* Add multiple GPU support.
 

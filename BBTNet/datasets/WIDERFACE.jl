@@ -89,6 +89,7 @@ function iterate(data::WIDER_Data, state=ifelse(
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
             img, box = read_img(img_dir, img_size, r=data.reader, boxes=data.bboxes[img_path])
+            img = reverse(img, dims=1) # needed for using pytorch model
             push!(labels, box)
             imgs_arr[:,:,:,idx] .= img
             idx += 1
