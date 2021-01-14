@@ -45,7 +45,7 @@ mutable struct WIDER_Data
         end
         
         # for running the same data over and over - overfit purposes
-        # files = files[2:1+batch_size]
+        # files = files[1:12]
     
         return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), dtype)
     end

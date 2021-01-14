@@ -7,23 +7,25 @@ include("../backbones/context_module.jl")
 include("../backbones/ssh.jl")
 
 
-function load_pth_model(model::RetinaFace, path; dtype=Array{Float32})
-    c = JLD.jldopen("./weights/Resnet50.jld", "r") do file
+function load_pth_model(model::RetinaFace, path; dtype=Array{Float32}, load_heads=true)
+    c = JLD.jldopen(path, "r") do file
         read(file, "data")
     end
     data = Dict()
     for k in keys(c)
         if !isempty(k) data[k] = c[k] end
     end
-    return set_pth_data(model, data; dtype=dtype)
+    return set_pth_data(model, data; dtype=dtype, load_heads=load_heads)
 end
 
-function set_pth_data(model::RetinaFace, data; dtype=Array{Float32})
+function set_pth_data(model::RetinaFace, data; dtype=Array{Float32}, load_heads=true)
     conv_w, conv_b, bn_mom, bn_b, bn_mult = get_pth_resnet_params(data, dtype=dtype)
     model.backbone = load_mat_weights(model.backbone, nothing; pre_weights=[conv_w, conv_b, nothing, nothing, bn_mom, bn_b, bn_mult])
     model = set_pth_fpn_data(model, data, dtype=dtype)
-    model = set_pth_context_module_data(model, data, dtype=dtype)
-    model = set_pth_head_getters_data(model, data, dtype=dtype)
+    model = set_pth_context_module_data(model, data, dtype=dtype) 
+    if load_heads
+        model = set_pth_head_getters_data(model, data, dtype=dtype)
+    end
     
     for p in params(model)
         p = Param(convert(dtype, value(p)))

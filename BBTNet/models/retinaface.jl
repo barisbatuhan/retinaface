@@ -24,6 +24,7 @@ mutable struct HeadGetter
     function HeadGetter(input_dim, task_len; scale_cnt=5, dtype=Array{Float32})
         layers = []
         for s in 1:scale_cnt
+            # is bias a right choice?
             push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=true))
         end
         return new(layers, task_len)
@@ -152,7 +153,10 @@ function (model::RetinaFace)(x, y, mode=0, train=true, weight_decay=0)
     loss = loss_cls + lambda1 * loss_bbox + lambda2 * loss_pts + decay_loss
         
     to_print = get_losses_string(loss, loss_cls, loss_bbox, loss_pts, decay_loss)
-    print(to_print); open(log_dir, "a") do io write(io, to_print) end; # saving data
+    print(to_print); 
+    if log_dir !== nothing
+        open(log_dir, "a") do io write(io, to_print) end; # saving data
+    end
         
     return loss
 end
@@ -160,12 +164,13 @@ end
 # if mode is 1, then first head IOUs are taken, otherwise second head IOUs
 function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2) 
 
-    loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0; lmN = 0; bboxN = 0;
+    loss_cls = 0; loss_lm = 0; loss_bbox = 0; loss_decay = 0; lmN = 0; bboxN = 0; clsN = 0;
     pos_thold = mode == 1 ? head1_pos_iou : head2_pos_iou
     neg_thold = mode == 1 ? head1_neg_iou : head2_neg_iou
             
     # helper parameters for calculating losses
-    T, P, N = size(cls_vals); batch_cls = convert(Array{Int64}, zeros(P, N));
+    T, P, N = size(cls_vals); 
+    batch_cls = convert(Array{Int64}, zeros(P, N));
     batch_gt = cat(value(bbox_vals), value(lm_vals), dims=1)
         
     for n in 1:N 
@@ -174,10 +179,12 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
             continue # if the cropped image has no faces
         end 
             
-        l_cls =-log.(Array(value(cls_vals)))[conf_indices[2],:,n]; gt = y[n]; prior = nothing;
+        l_cls =Array(value(cls_vals))[1,:,n]; gt = y[n]; prior = nothing;
         
-        if length(size(priors)) > 2 prior = priors[:,:,n]
-        else prior = priors
+        if length(size(priors)) > 2 
+            prior = priors[:,:,n]
+        else 
+            prior = priors
         end
         
         gt, pos_idx, neg_idx = encode_gt_and_get_indices(gt, prior, l_cls, pos_thold, neg_thold)   
@@ -190,11 +197,13 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
             if size(lm_indices, 1) > 0 
                 # counting only the ones with landmark data 
                 batch_gt[5:14,pos_idx[lm_indices],n] = gt[5:14,lm_indices]
-                lmN += length(lm_indices) # check here!
+                lmN += length(lm_indices)
             end
                 
-            batch_gt[1:4,pos_idx,n] = gt[1:4,:]; bboxN += length(pos_idx);          
-            batch_cls[pos_idx,n] .= conf_indices[1]; batch_cls[neg_idx,n] .= conf_indices[2]; 
+            batch_gt[1:4,pos_idx,n] = gt[1:4,:]; bboxN += length(pos_idx);    
+            batch_cls[neg_idx,n] .= 1; batch_cls[pos_idx,n] .= 2;
+            clsN += length(pos_idx) + length(neg_idx)
+            
         end 
     end
         
@@ -205,8 +214,14 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
     # classification negative log likelihood loss
     cls_vals = reshape(cls_vals, (2, N*P))
     batch_cls = vec(batch_cls) 
-    loss_cls = nll(cls_vals, batch_cls)
+    loss_cls, Ncls = nll(cls_vals, batch_cls, average=false)
+    
+    if Ncls != clsN
+        print("NLL Count are not equal. NLL: ", Ncls, " & Default: ", clsN, "\n")
+    end
+    
     if (isinf(value(loss_cls)) || isnan(value(loss_cls))) loss_cls = 0 end 
+
     # regression loss of the box centers, width and height
     loss_bbox = smooth_l1(abs.(batch_gt[1:4,:,:] - bbox_vals)) / bboxN
     # box center and all landmark points regression loss per point
@@ -216,7 +231,7 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
 end
 
 # mode 1 for 2 context heads, mode 2 for only 1 context head
-function predict_model(model::RetinaFace, x; mode=2) 
+function predict_model(model::RetinaFace, x; y=nothing, mode=2) 
     # getting predictions
     p_vals = model(x, mode=0, train=false); priors = _get_priorboxes();
     
@@ -228,33 +243,47 @@ function predict_model(model::RetinaFace, x; mode=2)
     cls_vals, bbox_vals, lm_vals = model(x, mode=2, p_vals=p_vals, train=false)
     cls_vals = Array(cls_vals); bbox_vals = Array(bbox_vals); lm_vals = Array(lm_vals);
     
-#     l_cls =-log.(Array(value(cls_vals)))[conf_indices[2],:,1];
-#     gt, pos_idx, neg_idx = encode_gt_and_get_indices(y, priors, l_cls, 0.2, 0.1)  
+    pos_idx = nothing; neg_idx = nothing;
+    if y !== nothing
+        l_cls =-log.(Array(value(cls_vals)))[1,:,1]; # getting negative class losses
+        prior = priors # _get_priorboxes()
+        gt, pos_idx, neg_idx = encode_gt_and_get_indices(y, prior, l_cls, 0.2, 0.1)  
+        # print("Indices --> ", pos_idx, "\n")
+    end
     
     # decoding points to min and max
     bbox_vals, lm_vals = decode_points(bbox_vals, lm_vals, priors)
     bbox_vals = _to_min_max_form(bbox_vals)
+    bbox_vals[findall(bbox_vals .< 0)] .= 0
+    bbox_vals[findall(bbox_vals .> img_size)] .= img_size
     
-#     print("Indices --> ", pos_idx, "\n")
-#     print("Classvals --> ", cls_vals[:,pos_idx,1],'\n')    
-#     print("Boxes: --> ", bbox_vals[:,pos_idx,1],'\n')
-#     print("Landmarks: --> ", lm_vals[:,pos_idx,1],'\n')
+    if y !== nothing
+        # to see the anchorbox matched prediction scores for debugging
+        # print("Indices --> ", pos_idx, "\n")
+        print("Classvals --> ", cls_vals[2,pos_idx,1],'\n')    
+        print("Boxes: --> ", bbox_vals[:,pos_idx,1],'\n')
+        print("Landmarks: --> ", lm_vals[:,pos_idx,1],'\n')
+    end
     
-               
     cls_results = []; bbox_results = []; lm_results = [];
         
-    for n in 1:size(cls_vals)[end]     
-        # confidence threshold check
-        indices = findall(cls_vals[conf_indices[1],:,n] .>= conf_level)
-        cls_result = cls_vals[:,indices,n]
-        bbox_result = bbox_vals[:,indices,n]
-        lm_result = lm_vals[:,indices,n]   
-        # NMS check
-        indices = nms(vec(cls_result[conf_indices[1],:]), bbox_result)
-        cls_result = cls_result[:,indices]
-        bbox_result = bbox_result[:,indices]
-        lm_result = lm_result[:,indices]   
-        # pushing results
+    for n in 1:size(cls_vals)[end] 
+        cls_result = cls_vals[:,pos_idx,1]; 
+        bbox_result = bbox_vals[:,pos_idx,1]; 
+        lm_result = lm_vals[:,pos_idx,1];
+#         # confidence threshold check
+#         indices = findall(cls_vals[2,:,n] .>= conf_level)
+#         cls_result = cls_vals[:,indices,n]
+#         bbox_result = bbox_vals[:,indices,n]
+#         lm_result = lm_vals[:,indices,n]   
+#         print("Selected: ", size(indices),"\n")
+#         # NMS check
+#         indices = nms(vec(cls_result[2,:]), bbox_result)
+#         cls_result = cls_result[:,indices]
+#         bbox_result = bbox_result[:,indices]
+#         lm_result = lm_result[:,indices]   
+#         print("After NMS: ", size(indices),"\n")
+#         # pushing results
         push!(cls_results, cls_result)
         push!(bbox_results, bbox_result)
         push!(lm_results, lm_result)  
@@ -265,7 +294,10 @@ function predict_model(model::RetinaFace, x; mode=2)
 end
 
 function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothing)
-    open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n") end;
+    
+    if log_dir !== nothing
+        open(log_dir, "w") do io write(io, "===== TRAINING PROCESS =====\n") end;
+    end
     
     curr_lr = lrs[1]; lr_change = (lrs[2] - lrs[1]) / lr_change_epoch[1];
     for e in start_epoch:num_epochs
@@ -279,8 +311,11 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
                 to_print  = "\n--- Epoch: " * string(e) 
                 to_print *= " & Batch: " * string(curr_batch) * "/" 
                 to_print *= string(total_batches) * "\n\n"
-                print(to_print)
-                open(log_dir, "a") do io write(io, to_print) end;
+                # print(to_print)
+                print("E: ", string(e) , " --> ")
+                if log_dir !== nothing 
+                    open(log_dir, "a") do io write(io, to_print) end;
+                end
             end
             
             # Adjusting LR for each step
@@ -300,8 +335,8 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
                 iter_no += 1
                 curr_batch += size(imgs)[end]  
             else
-                if save_dir !== nothing 
-                    save_model(model, save_dir * "model_" * string(e) * ".jld2")
+                if save_dir !== nothing && mod(e, 10) == 0
+                    save_model(model, save_dir * "overfit_model_" * string(e) * ".jld2")
                 end
                 break
             end

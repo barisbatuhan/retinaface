@@ -37,9 +37,11 @@ function read_img(dir, len; boxes=nothing, r=nothing)
         
         img .*= 255
     else
+        img = convert(Array{Float32}, img) ./ 255
         img, new_boxes, maxlen = squaritize_img(img, new_boxes)
         img, new_boxes = resize_square_img(img, new_boxes, len, maxlen) 
         new_boxes[new_boxes .< 0] .= -1
+        img .*= 255
     end 
             
     bbox_indices = getindex.(findall(new_boxes[1,:] .>= 0)) # images having bboxes

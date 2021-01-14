@@ -28,13 +28,11 @@ function (fpn::FPN)(xs; train=true)
         p6 = fpn.o6(c5, train=train)
         # refucing the dim. to 256 and upsampling
         p5 = fpn.o5(c5, train=train)
-        p4 = fpn.o4(c4, train=train) 
-        p4 = p4 + unpool(p5)
-        p3 = fpn.o3(c3, train=train) + unpool(p4)
-        p2 = fpn.o2(c2, train=train) + unpool(p3)
-        # final 3x3 conv layers
+        p4 = fpn.o4(c4, train=train) + unpool(p5)
         p4 = fpn.merge4(p4, train=train)
+        p3 = fpn.o3(c3, train=train) + unpool(p4)
         p3 = fpn.merge3(p3, train=train)
+        p2 = fpn.o2(c2, train=train) + unpool(p3)
         p2 = fpn.merge2(p2, train=train)
         return [p2, p3, p4, p5, p6]
     
