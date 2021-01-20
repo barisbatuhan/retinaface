@@ -2,49 +2,47 @@ include("../../configs.jl")
 include("../core/metrics.jl")
 
 function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
+    variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]
     iou_vals = iou(gt[1:4,:], _to_min_max_form(priors))
-    # gets max values and indices for each gt
-    max_gt_vals, max_gt_idx = findmax(iou_vals; dims=1)
-    # gets max values and indices for each prior
-    max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
     # selecting positive prior boxes  
-    pos_selected = findall(max_gt_vals .>= pos_thold)
-    pos_gt_indices = getindex.(pos_selected, [1 2])[:, 2]
-    pos_prior_indices = getindex.(max_gt_idx[pos_selected], [1 2])[:, 1] 
+    pos_pairs = findall(iou_vals .>= pos_thold)
+    pos_gt = zeros(15, length(pos_pairs))
+    gt_idx = getindex.(pos_pairs, [1 2])[:, 2]
+    prior_idx = getindex.(pos_pairs, [1 2])[:, 1]
     
-    num_poses = length(pos_gt_indices)
+    # enlarging gt matrix to match selected anchors
+    pos_gt .= gt[:,gt_idx]
+    num_poses = length(prior_idx)
     if num_poses == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
     end
     
     #selecting negative prior boxes
+    max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
     neg_indices = getindex.(findall(max_prior_vals .<= neg_thold), [1 2])[:,1]
     neg_indices = neg_indices[sortperm(losses[neg_indices])]
     
     neg_cnt = ohem_ratio * num_poses
-    # neg_cnt = (ohem_box_limit - num_poses) >= neg_cnt ? neg_cnt : (ohem_box_limit - num_poses)
     neg_cnt = neg_cnt < 1 ? 1 : neg_cnt 
     neg_indices = neg_indices[1:neg_cnt]
             
     # gt bbox conversion
-    selected_priors = priors[:,pos_prior_indices]
-    gt = gt[:,pos_gt_indices] # only positive ground truth values are included
+    selected_priors = priors[:,prior_idx]
     
-    gt[1:4,:] = _to_center_length_form(gt[1:4,:])
-    gt[3:4,:] = log.(gt[3:4,:] ./ (variances[1] .* selected_priors[3:4,:]))
+    pos_gt[1:4,:] = _to_center_length_form(pos_gt[1:4,:])
+    pos_gt[3:4,:] = log.(pos_gt[3:4,:] ./ selected_priors[3:4,:]) ./ variances[1]
     
-    gt[1:2,:] = (gt[1:2,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
-    gt[5:6,:] = (gt[5:6,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
-    gt[7:8,:] = (gt[7:8,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
-    gt[9:10,:] = (gt[9:10,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
-    gt[11:12,:] = (gt[11:12,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
-    gt[13:14,:] = (gt[13:14,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[1:2,:] = (pos_gt[1:2,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[5:6,:] = (pos_gt[5:6,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[7:8,:] = (pos_gt[7:8,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[9:10,:] = (pos_gt[9:10,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[11:12,:] = (pos_gt[11:12,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
+    pos_gt[13:14,:] = (pos_gt[13:14,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
     
-    return gt, pos_prior_indices, neg_indices
+    # print("Pos_indices: ", prior_idx, "&& Neg_indices: ", neg_indices, "\n")
+    return pos_gt, prior_idx, neg_indices
 end
-
-
 
 function nms(scores, points)
     x1 = points[1,:]; y1 = points[2,:]; x2 = points[3,:]; y2 = points[4,:];
@@ -84,9 +82,7 @@ Conversion from:
 """
 function _to_center_length_form(boxes)
     init_shape = size(boxes)
-    # converting to 2D
     boxes = reshape(boxes, (size(boxes)[1], prod(size(boxes)[2:end]))) # converting to 2D
-    
     lengths = boxes[3:4,:] .- boxes[1:2,:]
     return reshape(cat(boxes[1:2,:] .+ (lengths ./ 2), lengths, dims=1), init_shape)
 end
@@ -95,7 +91,7 @@ end
 """
 Returns the anchor boxes with their center_x, center_y, width, height information.
 """
-function _get_priorboxes()
+function _get_priorboxes(num_anchors, anchor_info, img_size)
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
     anchors = zeros(4, num_proposals)
@@ -134,15 +130,17 @@ end
 
 
 function _decode_bboxes(bbox, priors)
+    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end
     centers = priors[1:2,:,:] .+ bbox[1:2,:,:] .* variances[2] .* priors[3:4,:,:]
-    lengths = exp.(bbox[3:4,:,:]) .* variances[1] .* priors[3:4,:,:]
+    lengths = exp.(bbox[3:4,:,:] .* variances[1]) .* priors[3:4,:,:]
     return cat(centers, lengths, dims=1)
 end
 
 function _decode_landmarks(landmarks, priors)
+    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end

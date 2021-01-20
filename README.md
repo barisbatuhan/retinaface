@@ -24,7 +24,7 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Sample Result
 
-![Sample Image Detection Result](./data/evaluated.jpg)
+![Sample Image Detection Result](./data/results/evaluated.jpg)
 
 ## Requirements
 
@@ -64,7 +64,7 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Demonstration of the Network
 
-![Network Graph](./data/network.JPG)
+![Network Graph](./data/readme/network.JPG)
 
 ## Progress So Far
 
@@ -76,7 +76,7 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Results & Evaluation
 
-![Work in Progress](./data/work_in_progress.jpg)
+![Work in Progress](./data/readme/work_in_progress.jpg)
 
 ## What To Do Next
 

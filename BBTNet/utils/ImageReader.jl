@@ -7,23 +7,25 @@ mutable struct Image_Reader
     augment::Bool
     pre_scales::Array{Float64}
     function Image_Reader(augment::Bool=false)
+        crop_ratios = [0.6, 0.8, 1.0]
         return new(augment, crop_ratios)
     end
 end
 
 # r is the reader object
-function read_img(dir, len; boxes=nothing, r=nothing)
+function read_img(dir; len=nothing, boxes=nothing, r=nothing)
     
     img = convert(Array{Int64}, rawview(channelview(load(dir))))
+    new_boxes = boxes === nothing ? nothing : deepcopy(boxes)
+    c, h, w = size(img)
     
-    if boxes === nothing
-        img, _, maxlen = squaritize_img(img, nothing)
-        img, _ = resize_square_img(img, nothing, len, maxlen)     
-        return img .- avg_img
+    if len === nothing
+        len = max(w, h) # makes image square without changing its size, for evaluation
+        div = Int(floor(len / 64))
+        len = 64 * div
     end
     
-    new_boxes = deepcopy(boxes)
-    if r.augment 
+    if r !== nothing && r.augment 
         img = convert(Array{Float32}, img) ./ 255
         roi = _find_roi(r, img)
         # horizontal flip
@@ -34,26 +36,28 @@ function read_img(dir, len; boxes=nothing, r=nothing)
         img, new_boxes = crop_image(img, new_boxes, roi)
         # resizing to <len>
         img, new_boxes = resize_square_img(img, new_boxes, len, (roi[3] - roi[1]))
-        
         img .*= 255
     else
         img = convert(Array{Float32}, img) ./ 255
         img, new_boxes, maxlen = squaritize_img(img, new_boxes)
         img, new_boxes = resize_square_img(img, new_boxes, len, maxlen) 
-        new_boxes[new_boxes .< 0] .= -1
         img .*= 255
     end 
             
-    bbox_indices = getindex.(findall(new_boxes[1,:] .>= 0)) # images having bboxes
+    if new_boxes !== nothing 
+        new_boxes[new_boxes .< 0] .= -1
+        bbox_indices = getindex.(findall(new_boxes[1,:] .>= 0)) # images having bboxes
+        new_boxes = new_boxes[:,bbox_indices]  
+    end
+    
     img .-= avg_img 
-    new_boxes = new_boxes[:,bbox_indices]  
     return img, new_boxes
 end
 
 function _find_roi(r::Image_Reader, img)
     c, h, w = size(img)
     maxlen = max(h, w); minlen = min(h, w)
-    scale = r.pre_scales[rand(1:5)]
+    scale = r.pre_scales[rand(1:length(r.pre_scales))]
     new_short = Int(ceil(minlen * scale))
     x1 = 1; y1 = 1
     if scale < 1
@@ -129,7 +133,6 @@ function resize_square_img(img, new_boxes, new_len, old_len)
     ratio = new_len / old_len
     if new_boxes !== nothing
         new_boxes = ratio .* new_boxes
-        new_boxes[new_boxes .< 0] .= -1
     end
     return img, new_boxes
 end

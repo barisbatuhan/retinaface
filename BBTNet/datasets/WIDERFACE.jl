@@ -16,9 +16,10 @@ mutable struct WIDER_Data
     augment::Bool
     curr_idx::Int64
     reader::Image_Reader
+    img_size::Int64
     dtype
     
-    function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, shuffle::Bool=true, dtype=Array{Float32})
+    function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, img_size=640, shuffle::Bool=true, dtype=Array{Float32})
         files = []
         bbox_dict = Dict()
         num_faces = 0
@@ -44,10 +45,7 @@ mutable struct WIDER_Data
             bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
-        # for running the same data over and over - overfit purposes
-        # files = files[1:12]
-    
-        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), dtype)
+        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), img_size, dtype)
     end
 end
 
@@ -56,7 +54,8 @@ function _clean_bboxes(bboxes)
     # annotation processing
     for person in 1:length(bboxes)
         z_coords = 0
-        for iter in 1:length(bboxes[person])-1
+        iter_cnt = length(bboxes[person]) == 4 ? 4 : length(bboxes[person])-1 # differences in val data and train data format
+        for iter in 1:iter_cnt
             if (iter > 4) && (mod(iter, 3) == 1)
                 z_coords += 1
                 continue
@@ -66,7 +65,7 @@ function _clean_bboxes(bboxes)
         end
         if all(>=(0), annotations[5:14,person]) 
             annotations[15,person] = 1.0
-            else # no landmark info
+        else # no/partial landmark info
             annotations[15,person] = -1.0
         end
         if !all(>=(0), annotations[1:4,person]) 
@@ -79,22 +78,27 @@ end
 function iterate(data::WIDER_Data, state=ifelse(
             data.shuffle, randperm(data.num_files), collect(1:data.num_files)))
     
-    if length(state) < data.batch_size || state === nothing
-        return nothing
+    if state === nothing || length(state) < data.batch_size
+        return (nothing, nothing), nothing
     else 
         imgs = data.files[state[1:data.batch_size]]
-        imgs_arr = zeros(3, img_size, img_size, data.batch_size)
+        imgs_arr = zeros(3, data.img_size, data.img_size, data.batch_size)
         labels = []
         idx = 1
         for img_path in imgs
             img_dir = data.dir * "images/" * img_path
-            img, box = read_img(img_dir, img_size, r=data.reader, boxes=data.bboxes[img_path])
+            img, box = read_img(img_dir, len=data.img_size, r=data.reader, boxes=data.bboxes[img_path])
             img = reverse(img, dims=1) # needed for using pytorch model
             push!(labels, box)
             imgs_arr[:,:,:,idx] .= img
             idx += 1
         end
         imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
-        return (imgs_arr, labels), state[data.batch_size+1:end]
+        
+        if length(state) <= data.batch_size
+            return (imgs_arr, labels), []
+        else
+            return (imgs_arr, labels), state[data.batch_size+1:end]
+        end
     end
 end
