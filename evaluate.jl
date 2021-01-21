@@ -82,7 +82,7 @@ function main()
         mAP_val = mAP(boxes, b, c, mAP_ious, thresh_num=1000)
         APs += AP_val; mAPs += mAP_val; cnt += 1;
         
-        to_print = "Img: " * string(cnt) * " / " * string(length(files)) * " --> AP: " * string(AP_val) * " & mAP: " * string(mAP_val) * "\n"
+        to_print = "Img: " * string(cnt) * " / " * string(length(d.files)) * " --> AP: " * string(AP_val) * " & mAP: " * string(mAP_val) * "\n"
         print(to_print)
         if log_file != nothing
             open(log_file, "a") do io write(io, to_print) end;

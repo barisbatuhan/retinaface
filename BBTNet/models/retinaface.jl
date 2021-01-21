@@ -298,11 +298,11 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
     for e in 1:num_epochs
         if e == 1
             lrs_per_epoch[e] = lrs[1]; lr_change = (lrs[2] - lrs[1]) / lr_change_epoch[1];
-        elseif e == 2
+        elseif e == lr_change_epoch[1]
             lrs_per_epoch[e] = lrs[2]; lr_change = (lrs[3] - lrs[2]) / (lr_change_epoch[2] - lr_change_epoch[1]);
-        elseif e == 3
+        elseif e == lr_change_epoch[2]
             lrs_per_epoch[e] = lrs[3]; lr_change = (lrs[4] - lrs[3]) / (lr_change_epoch[3] - lr_change_epoch[2]); 
-        elseif e == 4
+        elseif e == lr_change_epoch[3]
             lrs_per_epoch[e] = lrs[4]; lr_change = 0;
         else
             lrs_per_epoch[e] = lrs_per_epoch[e - 1] + lr_change  
@@ -327,7 +327,8 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
             # Updating the model
             momentum!(model, [(imgs, boxes, model.mode, true, weight_decay)], lr=curr_lr, gamma=momentum)
             (imgs, boxes), state = iterate(reader, state)
-            iter_no += 1; curr_batch += size(imgs)[end];
+            iter_no += 1; 
+            if imgs !== nothing curr_batch += size(imgs)[end] end
         end
         if save_dir !== nothing
             to_save = save_dir * "model_"

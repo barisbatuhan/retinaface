@@ -19,8 +19,6 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
 
-* [**Data Sheet**](https://docs.google.com/spreadsheets/d/1Si1-91wCge3aq7liSTSFxGuJb3fO_-xHlAIzQkaLEyU/edit?usp=sharing) 
-
 
 ## Sample Result
 
@@ -32,17 +30,15 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * Knet >= v1.4.5 (latest is preferred)
 
+* CUDA >= 11.0 (Optional: only required for running the code in GPU, latest is preferred)
+
 ## First Setup
 
-* All the packages required to be installed are found under `setup.jl`. To install packages to a virtual environment you can directly run that source file (you can also type `make setup` to run it), or you can install the packages in that file manually to run this project on the actual device.
-
-* All of the implementation steps are summarized with their codes in the `progress.ipynb` notebook. Please check this file before giving a deeper look on this repository. 
+* All the packages required to be installed are found under `setup.jl`. To install packages to you can directly run that source file (you can also type `make setup` to run it).
 
 * To train or predict boxes and landmarks by using this repository, please initialize the parameters in `configs.jl` first. Especially please assign correct paths for the dataset directory.
 
-* To train by using system setup, either run `make train` or `julia train.jl`. To train with the virtual environment you setup by running `setup.jl` file, type `make train-virtual`.
-
-* Also to predict by using system setup, either run `make predict` or `julia predict.jl`. To predict with the virtual environment you setup by running `setup.jl` file, type `make predict-virtual`. By default, this process predicts and prints the bounding boxes in the first batch of the data. You can change `predict.jl` for predicting custom images.
+* All the training, predicting and evaluating commands are available in the makefile. Please check that file before trying to run the code.
 
 **Note:** In order to use the `make` command, the operating system should be a linux based distro or macOS. To use this command on Windows 10, please install [**GNU Make**](https://www.gnu.org/software/make/).
 
@@ -52,15 +48,15 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * [WIDERFACE Landmark Annotations](https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0)
 
-* [AFLW](https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw/)
+* [AFLW](https://www.tugraz.at/institute/icg/research/team-bischof/lrs/downloads/aflw/) (not used in this project but used in the official paper)
 
-* [FDDB](http://vis-www.cs.umass.edu/fddb/)
+* [FDDB](http://vis-www.cs.umass.edu/fddb/) (not used in this project but used in the official paper)
 
 * [ImageNet Weights for ResNet50](https://www.vlfeat.org/matconvnet/models/imagenet-resnet-50-dag.mat)
 
 * [Weights to Pretrained Models](https://drive.google.com/drive/folders/1GTyTgfmAG2BXvbDDy5n9Jv2ajv1IvWaw?usp=sharing)
 
-**Note:** You can find the default `configs.jl` parameters of each of the pretrained models in [**this file**](./weights/info.txt).
+**Note:** You can find the default parameters of each of the pretrained models in [**this file**](./weights/info.txt).
 
 ## Demonstration of the Network
 
@@ -68,23 +64,37 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Progress So Far
 
-* The entire training and predicting pipelines are implemented. An already pretrained model is created by loading the weights from the [**PyTorch implementation of this paper**](https://github.com/biubug6/Pytorch_Retinaface). 
+* The entire training, predicting and AP evaluation pipelines are implemented. 
+
+* An already pretrained model is created by loading the weights from the [**PyTorch implementation of this paper**](https://github.com/biubug6/Pytorch_Retinaface). 
 
 * Cascaded structure of the model is also included to the model. The same context modules are used but the multitask heads are different for each cascaded structure.
 
 * The model supports both implementations with 3 and 5 lateral connections. However, the only backbone available currently is ResNet50.
 
+## Currently Working On
+
+* Weights available in GitHub with 5 lateral connections are retrieved from intermediate results. A fully training process is running currently. 
+
 ## Results & Evaluation
 
-![Work in Progress](./data/readme/work_in_progress.jpg)
+Model | WIDER Easy AP | WIDER Medium AP | WIDER Hard AP | WIDER Whole Val. AP | WIDER Whole Val. mAP |
+--- | --- | --- | --- |--- |--- |
+Official Paper | 96.57 | 95.91 | 91.16 | - | - |
+[Official Shared Sub-Model](https://github.com/deepinsight/insightface/tree/master/detection/RetinaFace) | 94.86 | 93.87 | 88.33 | - | - |
+[PyTorch Weights Loaded](https://github.com/biubug6/Pytorch_Retinaface) | 95.48 | 94.04 | 84.43 | 93.14 | 62.24 |
+*Cascaded_Lat5_Epoch13* | - | - | - | 82.29 | 44.08 |
+*NoCascade_Lat5_Epoch20* | - | - | - | 83.08 | 48.16 |
+
+Here, AP is calculated by taking the IOU threshold as 0.5 and mAP is calculated by taking the average of all IOU thresholds between 0.5 and 0.95 with step size of 0.05. Please keep in mind that Cascaded and NoCascade models are not fully trained yet.
+
+**Note: ** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now.
 
 ## What To Do Next
 
 * Support other datasets (FDDB and AFLW) in addition to the WIDERFACE dataset.
 
-* Implement the evaluation metrics: average AP and Area Under Curve (AUC), Failure Rate and Normalized Mean Error (NME).
-
-* Make sure the model can be trained from scratch and train the model for 5 lateral connections with cascaded structure enabled.
+* Implement the other evaluation metrics: Area Under Curve (AUC), Failure Rate and Normalized Mean Error (NME).
 
 * Instead of the normal Convolutional Layers in Context Modules, implement [**Deformable Convolutional Layers**](https://arxiv.org/abs/1703.06211) and retrain the model with this structure.
 

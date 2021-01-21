@@ -1,5 +1,4 @@
 # Files with big amount of data
-data/*/
 weights/*.mat
 weights/*.jld2
 weights/*.jld
