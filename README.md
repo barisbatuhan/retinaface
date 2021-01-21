@@ -88,7 +88,13 @@ Official Paper | 96.57 | 95.91 | 91.16 | - | - |
 
 Here, AP is calculated by taking the IOU threshold as 0.5 and mAP is calculated by taking the average of all IOU thresholds between 0.5 and 0.95 with step size of 0.05. Please keep in mind that Cascaded and NoCascade models are not fully trained yet.
 
-**Note: ** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now.
+**Note:** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now.
+
+## Extra Visualization
+
+![Image2](./data/results/evaluated2.png)
+
+![Image3](./data/results/evaluated3.png)
 
 ## What To Do Next
 
