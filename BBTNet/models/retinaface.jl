@@ -228,7 +228,8 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2, dtype=Array{F
     cls_vals = reshape(cls_vals, (2, N*P))
     loss_cls_neg = nll(cls_vals, vec(batch_cls[1,:,:]))
     loss_cls_pos = nll(cls_vals, vec(batch_cls[2,:,:]))
-    loss_cls = (ohem_ratio * loss_cls_pos + loss_cls_neg) / (ohem_ratio+1)
+    # loss_cls = (ohem_ratio * loss_cls_pos + loss_cls_neg) / (ohem_ratio+1)
+    loss_cls = (loss_cls_neg + loss_cls_pos) / 2
     if (isinf(value(loss_cls)) || isnan(value(loss_cls))) loss_cls = 0 end 
     
     # regression loss of the box centers, width and height

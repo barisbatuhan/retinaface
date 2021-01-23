@@ -71,46 +71,6 @@ function AP(gt, bboxes, confidences; iou_thold=0.5, thresh_num=1000, iou_vals=no
     return AP
 end
 
-
-
-# function AP(gt, bboxes, confidences; iou_thold=0.5, thresh_num=1000, iou_vals=nothing, return_array=false)
-#     results = zeros(2, thresh_num+1) # precisions 1st idx, recalls in 2nd idx
-#     if iou_vals === nothing iou_vals = iou(gt[1:4,:], bboxes) end
-    
-#     max_gt_vals, max_gt_idx = findmax(iou_vals; dims=1) 
-#     pos_gt_indices =  getindex.(max_gt_idx[findall(max_gt_vals .>= iou_thold)], [1 2])[:,1]
-#     neg_gt_indices =  getindex.(max_gt_idx[findall(max_gt_vals .< iou_thold)], [1 2])[:,1]
-    
-#     for t in 1:thresh_num+1
-#         thold = (t-1) / thresh_num
-#         TP = size(findall(confidences[2,pos_gt_indices] .>= thold), 1)
-#         FP = size(findall(confidences[2,neg_gt_indices] .>= thold), 1)
-#         FN = size(findall(confidences[2,pos_gt_indices] .< thold), 1)
-        
-#         precision = TP == 0 ? 0 : TP / (TP + FP)
-#         recall = TP == 0 ? 0 : TP / (TP + FN)
-#         results[1, t] = precision; results[2, t] = recall;
-#     end
-    
-#     main_results = zeros(thresh_num+1)
-#     for t in 1:thresh_num+1
-#         thold = (t-1) / thresh_num
-#         recall_indices = findall(results[2,:] .>= thold)
-#         if length(recall_indices) == 0
-#             main_results[t] = 0
-#         else
-#             main_results[t] = maximum(results[1,recall_indices])
-#         end
-#     end
-    
-#     if return_array return main_results end
-    
-#     AP = sum(main_results) / (thresh_num + 1)
-#     return AP
-# end
-
-
-
 function mAP(gt, bboxes, confidences, iou_tholds; thresh_num=1000)
     APs = 0; cnt = 0; iou_vals = iou(gt, bboxes);
     for iou_thold in iou_tholds[1]:iou_tholds[2]:iou_tholds[3]
