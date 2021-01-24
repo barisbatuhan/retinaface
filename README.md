@@ -26,11 +26,13 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Requirements
 
-* Julia >= v1.5.3 (latest is preferred)
+* Julia >= v1.5.3 (Latest is preferred)
 
-* Knet >= v1.4.5 (latest is preferred)
+* Knet >= v1.4.5 (Latest is preferred)
 
-* CUDA >= 11.0 (Optional: only required for running the code in GPU, latest is preferred)
+* CUDA >= 11.0 (Optional: Only required for running the code in GPU, latest is preferred)
+
+* Python v3.x (Optional: Only required if WIDER FACE validation data evaluation will be made)
 
 ## First Setup
 

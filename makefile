@@ -13,4 +13,6 @@ predict:
 	julia predict.jl --mode 2 --laterals 3 --image_path "./data/images/test.jpg" --load_dir ./weights/PyTorch_R50_mode2_laterals3.jld2 --save_dir ./data/results/predicted.png
     
 evaluate:
-	julia evaluate.jl --mode 2 --laterals 3 --load_dir ./weights/PyTorch_R50_mode2_laterals3.jld2 --eval_dir ./data/ --log_file ./logs/evaluate_log_lat3_new.txt
+	julia extract_preds.jl --mode 2 --laterals 3 --load_dir ./weights/PyTorch_R50_mode2_laterals3.jld2 --eval_dir ./wider_evaluate/ground_truth/ --save_dir ./data/wider_txt_lat3/
+#	python ./wider_evaluate/setup.py build_ext --inplace
+	python3 ./wider_evaluate/evaluation.py -p ./data/wider_txt_lat3/ -g ./wider_evaluate/ground_truth/

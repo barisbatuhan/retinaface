@@ -24,15 +24,9 @@ weight_decay    = 0.0005
 momentum        = 0.9
 lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
 lr_change_epoch = [3, 17, 23]
-# lrs             = [1e-2, 1e-3, 1e-4, 1e-5]
-# lr_change_epoch = [2, 10, 15]
 
 # Evaluation Parameters
 mAP_ious        = [0.5, 0.05, 0.95] # start, step size, end
-
-# Testing Parameters
-conf_level      = 0.5
-nms_threshold   = 0.2
 
 # Device Parameters
 run_gpu = true

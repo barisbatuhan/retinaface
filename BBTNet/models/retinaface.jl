@@ -246,7 +246,7 @@ end
 # 1  --> until context module + cascaded structure (full model), 
 # 2  --> until context module + 2nd head (no cascaded structure) 
 # set filter to false for not making any confidence score and NMS check (for evaluation) 
-function predict_image(model::RetinaFace, x; mode=1, filter=true, verbose=true) 
+function predict_image(model::RetinaFace, x; mode=1, filter=true, verbose=true, nms_thold=0.4, conf_thold=0.5) 
     use_context = mode == 0 ? false : true
     img_size = size(x, 1)
     # getting predictions
@@ -268,14 +268,14 @@ function predict_image(model::RetinaFace, x; mode=1, filter=true, verbose=true)
     if !filter
         return cls_vals[:,:,1], bbox_vals[:,:,1], lm_vals[:,:,1]
     else
-        indices = findall(cls_vals[2,:,1] .>= conf_level)
+        indices = findall(cls_vals[2,:,1] .>= conf_thold)
         cls_result = cls_vals[:,indices,1]
         bbox_result = bbox_vals[:,indices,1]
         lm_result = lm_vals[:,indices,1]   
         if verbose
             print("[INFO] Passed Confidence Check: ", size(indices, 1), "\n")
         end
-        indices = nms(vec(cls_result[2,:]), bbox_result)
+        indices = nms(vec(cls_result[2,:]), bbox_result, thold=nms_thold)
         cls_result = cls_result[:,indices]
         bbox_result = bbox_result[:,indices]
         lm_result = lm_result[:,indices]   

@@ -44,7 +44,7 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     return pos_gt, prior_idx, neg_indices
 end
 
-function nms(scores, points)
+function nms(scores, points; thold=0.4)
     x1 = points[1,:]; y1 = points[2,:]; x2 = points[3,:]; y2 = points[4,:];
     
     areas = (x2 - x1) .* (y2 - y1)
@@ -57,7 +57,7 @@ function nms(scores, points)
         else
             iou_vals = iou(points[:,i:i], points[:,keep])
             val, idx = findmax(iou_vals, dims=1)
-            if val[1] <= nms_threshold
+            if val[1] <= thold
                 push!(keep, i)
             end
         end   

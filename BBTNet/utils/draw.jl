@@ -21,14 +21,15 @@ function draw_boxes_and_landmarks(img, boxes, lms; conf=nothing, len=640)
                         (rect[1, 1], rect[4, 1])]), colors[1])
         end
         colorid = 2
-        pts = Int.(ceil.(lms[:, person]))
-        for lm in 1:2:10
-            if pts[lm,1] >= 0 && pts[lm+1,1] >= 0
-               to_draw = draw!(to_draw, CirclePointRadius(pts[lm,1],pts[lm+1,1],2), colors[colorid]) 
+        if lms !== nothing
+            pts = Int.(ceil.(lms[:, person]))
+            for lm in 1:2:10
+                if pts[lm,1] >= 0 && pts[lm+1,1] >= 0
+                   to_draw = draw!(to_draw, CirclePointRadius(pts[lm,1],pts[lm+1,1],2), colors[colorid]) 
+                end
+                colorid += 1
             end
-            colorid += 1
         end
-        
     end
     
     if conf !== nothing
