@@ -73,7 +73,7 @@ end
 
 # Conv2D Layer Forward Pass
 function (c::Conv2D)(x; train=true)
-    # apply dropout only in training
+    # apply dropout only in training 
     if train
         if c.p > 0 
             x = dropout(x, c.p)

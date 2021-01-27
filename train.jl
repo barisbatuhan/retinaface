@@ -60,7 +60,7 @@ function main()
     
     train_dir = wf_path * "train/"
     labels_dir = wf_labels_path * "train/"
-    data = WIDER_Data(train_dir, labels_dir, train=false, shuffle=true, batch_size=bs, dtype=atype)
+    data = WIDER_Data(train_dir, labels_dir, train=true, shuffle=true, batch_size=bs, dtype=atype)
     print("[INFO] Data is loaded!\n")
     
     model = RetinaFace(

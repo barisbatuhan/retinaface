@@ -20,24 +20,20 @@ include("../../configs.jl")
 mutable struct HeadGetter layers; task_len; scale_cnt; end
 
 function HeadGetter(input_dim, task_len; scale_cnt=5, dtype=Array{Float32})
-        layers = []
-        num_anchors = scale_cnt == 3 ? 2 : 3
-        for s in 1:scale_cnt
-            push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=true))
-        end
-        return HeadGetter(layers, task_len, scale_cnt)
+    layers = []
+    num_anchors = scale_cnt == 3 ? 2 : 3
+    for s in 1:scale_cnt
+        push!(layers, Conv2D(1, 1, input_dim, num_anchors*task_len, dtype=dtype, bias=true))
     end
+    return HeadGetter(layers, task_len, scale_cnt)
+end
 
 
 function (hg::HeadGetter)(xs; train=true)
-    proposals = []
-    getter_idx = hg.scale_cnt == 5 ? 1 : 2
-    T = hg.task_len
+    proposals = []; T = hg.task_len;
     for (i, x) in enumerate(xs)
-        proposal = hg.layers[getter_idx](x, train=train)
-        getter_idx += 1
+        proposal = hg.layers[i](x, train=train)
         W, H, C, N = size(proposal); A = Int(W*H*(C/T));
-        
         # converting all proposals from 4D shape to 3D   
         proposal = permutedims(proposal, (3, 1, 2, 4))
         proposal = reshape(proposal, (T, A, N))
@@ -313,7 +309,9 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
     for e in start_epoch:num_epochs
         (imgs, boxes), state = iterate(reader)
         iter_no = 1; last_loss = 0; total_batches = size(state, 1) + size(imgs)[end]; 
-        curr_batch = 0; curr_lr = lrs_per_epoch[e]
+        curr_batch = 0; curr_lr = lrs_per_epoch[e];
+        
+        for p in params(model) p.opt = Momentum(lr=curr_lr, gamma=momentum) end;
         
         while state !== nothing && imgs !== nothing      
             if mod(iter_no, 5) == 1 # prints per 5 batches

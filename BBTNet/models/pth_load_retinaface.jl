@@ -115,16 +115,16 @@ function set_pth_head_getters_data(model::RetinaFace, data; dtype=Array{Float32}
 end
 
 function set_pth_head_data(model::HeadGetter, start_txt, data; dtype=Array{Float32})
-    model.layers[2].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".0.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
-    model.layers[2].b = Param(convert(dtype, 
+    model.layers[1].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".0.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
+    model.layers[1].b = Param(convert(dtype, 
         reshape(data[start_txt * ".0.conv1x1.bias"], (1, 1, size(data[start_txt * ".0.conv1x1.bias"], 1), 1))))
     
-    model.layers[3].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".1.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
-    model.layers[3].b = Param(convert(dtype, 
+    model.layers[2].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".1.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
+    model.layers[2].b = Param(convert(dtype, 
         reshape(data[start_txt * ".1.conv1x1.bias"], (1, 1, size(data[start_txt * ".1.conv1x1.bias"], 1), 1))))
     
-    model.layers[4].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".2.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
-    model.layers[4].b = Param(convert(dtype, 
+    model.layers[3].w = Param(convert(dtype, reverse(reverse(permutedims(data[start_txt * ".2.conv1x1.weight"], (4, 3, 2, 1)), dims=1), dims=2)))
+    model.layers[3].b = Param(convert(dtype, 
         reshape(data[start_txt * ".2.conv1x1.bias"], (1, 1, size(data[start_txt * ".2.conv1x1.bias"], 1), 1))))
     
     if start_txt == "module.ClassHead"

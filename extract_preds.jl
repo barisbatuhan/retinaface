@@ -78,19 +78,32 @@ function main()
             b .*= scaler; l .*= scaler; # resize to original size
             # excluding zero fills to convert image to square
             if img_w < img_h
-                b[1:2:3,:] .-= ceil((img_h - img_w) / 2)
+                b[1:2:3,:] .-= floor((img_h - img_w) / 2)
             elseif img_h < img_w
-                b[2:2:4,:] .-= ceil((img_w - img_h) / 2)
+                b[2:2:4,:] .-= floor((img_w - img_h) / 2)
+            end
+            
+            invalids = 0
+            for person in 1:size(b, 2)
+                x1, y1, x2, y2 = round.(Int, b[:,person])
+                if x2 <= 0 || y2 <= 0 || x1 >= img_w || y1 >= img_h
+                    invalids += 1
+                end
             end
             
             logfile = save_dir * event * "/" * file * ".txt"
-            mkpath(save_dir * event); open(logfile, "w") do io write(io, file * "\n" * string(size(b, 2)) * "\n") end;
-            for person in 1:size(b, 2)
-                x1, y1, x2, y2 = Int.(floor.(b[:,person]))
-                w = x2 - x1; h = y2 - y1;
-                conf = c[2,person]
-                to_print = string(x1) * " " * string(y1) * " " * string(w) * " " * string(h) * " " * string(conf) * "\n"
-                open(logfile, "a") do io write(io, to_print) end;
+            mkpath(save_dir * event); 
+            open(logfile, "w") do io 
+		write(io, file * "\n" * string(size(b, 2) - invalids) * "\n") 
+                for person in 1:size(b, 2)
+                    x1, y1, x2, y2 = round.(Int, b[:,person]); w = x2 - x1; h = y2 - y1;
+                    if x2 <= 0 || y2 <= 0 || x1 >= img_w || y1 >= img_h
+                        continue
+                    end
+                    conf = c[2,person]
+                    to_print = string(x1) * " " * string(y1) * " " * string(w) * " " * string(h) * " " * string(conf) * "\n"
+                    write(io, to_print) 
+                end
             end
             iter_no += 1; println("Iteration: ", iter_no, " finished!");
         end
