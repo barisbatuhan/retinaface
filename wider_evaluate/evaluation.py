@@ -264,8 +264,8 @@ def evaluation(pred, gt_path, iou_thresh=0.5):
                 pred_recall, proposal_list = image_eval(pred_info, gt_boxes, ignore, iou_thresh)
 
                 _img_pr_info = img_pr_info(thresh_num, pred_info, proposal_list, pred_recall)
-
                 pr_curve += _img_pr_info
+                
         pr_curve = dataset_pr_info(thresh_num, pr_curve, count_face)
 
         propose = pr_curve[:, 0]
@@ -284,20 +284,8 @@ def evaluation(pred, gt_path, iou_thresh=0.5):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pred', default="./data/wider_txt/")
-    parser.add_argument('-g', '--gt', default='./wider_evaluate/ground_truth/')
+    parser.add_argument('-p', '--pred', default="./widerface_txt/")
+    parser.add_argument('-g', '--gt', default='./ground_truth/')
 
     args = parser.parse_args()
     evaluation(args.pred, args.gt)
-
-
-
-
-
-
-
-
-
-
-
-

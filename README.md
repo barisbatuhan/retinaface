@@ -1,24 +1,10 @@
 # RetinaFace: Single-shot Multi-level Face Localisation in the Wild
 
-* **Author:** Barış Batuhan Topal
-* **Contact:** barisbatuhantopal@gmail.com / baristopal20@ku.edu.tr
-
 ## Description
 
 This project is an unofficial implementation of the paper "RetinaFace: Single-shot Multi-level Face Localisation in the Wild" in Julia programming language. 
 
 **Abstract of the Paper:** Though tremendous strides have been made in uncontrolled face detection, accurate and efficient 2D face alignment and 3D face reconstruction in-the-wild remain an open challenge. In this paper, we present a novel single-shot, multi-level face localisation method, named RetinaFace, which unifies face box prediction, 2D facial landmark localisation and 3D vertices regression under one common target: point regression on the image plane. To fill the data gap, we manually annotated five facial landmarks on the WIDER FACE dataset and employed a semi-automatic annotation pipeline to generate 3D vertices for face images from the WIDER FACE, AFLW and FDDB datasets. Based on extra annotations, we propose a mutually beneficial regression target for 3D face reconstruction, that is predicting 3D vertices projected on the image plane constrained by a common 3D topology. The proposed 3D face reconstruction branch can be easily incorporated, without any optimisation difficulty, in parallel with the existing box and 2D landmark regression branches during joint training. Extensive experimental results show that RetinaFace can simultaneously achieve stable face detection, accurate 2D face alignment and robust 3D face reconstruction while being efficient through single-shot inference.
-
-## Useful Links
-
-* [**Paper Link**](https://openaccess.thecvf.com/content_CVPR_2020/papers/Deng_RetinaFace_Single-Shot_Multi-Level_Face_Localisation_in_the_Wild_CVPR_2020_paper.pdf)
-
-* [**Research Log**](https://docs.google.com/document/d/1fF8Y2ZG3iQvLiHqBY47O8yGQFobWY9JDyNRvDlUqJPQ/edit?usp=sharing) 
-
-* [**Final Presentation**](https://docs.google.com/presentation/d/1lBw68_IdbSe_0n2KAlupRnDulvfzNrUMwx3sBkNl9p8/edit?usp=sharing)
-
-* [**Tech Report**](https://www.overleaf.com/read/pbtyskcsdgyt)
-
 
 ## Sample Result
 
@@ -80,17 +66,17 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## Results & Evaluation
 
-Model | WIDER Easy AP | WIDER Medium AP | WIDER Hard AP | WIDER Whole Val. AP | WIDER Whole Val. mAP |
+Model | WIDER Easy AP | WIDER Medium AP | WIDER Hard AP |
 --- | --- | --- | --- |--- |--- |
-Official Paper | 96.57 | 95.91 | 91.16 | - | - |
-[Official Shared Sub-Model](https://github.com/deepinsight/insightface/tree/master/detection/RetinaFace) | 94.86 | 93.87 | 88.33 | - | - |
-[PyTorch Weights Loaded](https://github.com/biubug6/Pytorch_Retinaface) | 95.48 | 94.04 | 84.43 | 93.14 | 62.24 |
-*Cascaded_Lat5_Epoch13* | - | - | - | 82.29 | 44.08 |
-*NoCascade_Lat5_Epoch20* | - | - | - | 83.08 | 48.16 |
+Official Paper | 96.6 | 95.9 | 91.1 |
+[Official Shared Sub-Model](https://github.com/deepinsight/insightface/tree/master/detection/RetinaFace) | 94.9 | 93.9 | 88.3 |
+[PyTorch Weights Loaded](https://github.com/biubug6/Pytorch_Retinaface) | 77.8 | 80.3 | 73.8 | 
+*Cascaded_Model_No_Augment* | 70.3 | 75.7 | 65.4 |
+*Cascaded_Model_With_Augment* | 83.0 | 84.3 | 73.5 |
 
 Here, AP is calculated by taking the IOU threshold as 0.5 and mAP is calculated by taking the average of all IOU thresholds between 0.5 and 0.95 with step size of 0.05. Please keep in mind that Cascaded and NoCascade models are not fully trained yet.
 
-**Note:** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now.
+**Note:** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now. Also, Cascaded_Model_With_Augment does not perform well in landmark localization task. Please select not augmented version for landmark localization task if you want to use the full model structure.
 
 ## Extra Visualization
 
