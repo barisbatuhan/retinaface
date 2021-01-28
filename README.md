@@ -67,7 +67,7 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 ## Results & Evaluation
 
 Model | WIDER Easy AP | WIDER Medium AP | WIDER Hard AP |
---- | --- | --- | --- |--- |--- |
+--- | --- | --- | --- |
 Official Paper | 96.6 | 95.9 | 91.1 |
 [Official Shared Sub-Model](https://github.com/deepinsight/insightface/tree/master/detection/RetinaFace) | 94.9 | 93.9 | 88.3 |
 [PyTorch Weights Loaded](https://github.com/biubug6/Pytorch_Retinaface) | 77.8 | 80.3 | 73.8 | 
