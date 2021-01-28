@@ -74,7 +74,7 @@ Official Paper | 96.6 | 95.9 | 91.1 |
 *Cascaded_Model_No_Augment* | 70.3 | 75.7 | 65.4 |
 *Cascaded_Model_With_Augment* | 83.0 | 84.3 | 73.5 |
 
-Here, AP is calculated by taking the IOU threshold as 0.5 and mAP is calculated by taking the average of all IOU thresholds between 0.5 and 0.95 with step size of 0.05. Please keep in mind that Cascaded and NoCascade models are not fully trained yet.
+Here, AP is calculated by taking the IOU threshold as 0.5.
 
 **Note:** If you just try to predict faces in images, please use the PyTorch weight-transferred model weights, since it is the most stable version right now. Also, Cascaded_Model_With_Augment does not perform well in landmark localization task. Please select not augmented version for landmark localization task if you want to use the full model structure.
 
