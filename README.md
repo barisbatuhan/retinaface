@@ -58,7 +58,7 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 * Cascaded structure of the model is also included to the model. The same context modules are used but the multitask heads are different for each cascaded structure.
 
-* The model supports both implementations with 3 and 5 lateral connections. However, the only backbone available currently is ResNet50.
+* The model supports both implementations with 3 and 5 lateral connections. The only backbones available currently are ResNet50 and MobileNetV2.
 
 ## Currently Working On
 
@@ -91,8 +91,6 @@ Here, AP is calculated by taking the IOU threshold as 0.5.
 * Implement the other evaluation metrics: Area Under Curve (AUC), Failure Rate and Normalized Mean Error (NME).
 
 * Instead of the normal Convolutional Layers in Context Modules, implement [**Deformable Convolutional Layers**](https://arxiv.org/abs/1703.06211) and retrain the model with this structure.
-
-* Add different backbones for shorter processing times, such as MobileNet.
 
 * Add multiple GPU support.
 

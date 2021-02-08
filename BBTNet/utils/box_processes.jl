@@ -1,5 +1,5 @@
 include("../../configs.jl")
-include("../core/metrics.jl")
+include("metrics.jl")
 
 function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]

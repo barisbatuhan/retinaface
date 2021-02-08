@@ -1,6 +1,6 @@
-using ImageDraw, Plots
+using Images, ImageDraw, Plots
 
-function draw_boxes_and_landmarks(img, boxes, lms; conf=nothing, len=640)
+function draw_boxes_and_landmarks(img, boxes; lms=nothing, conf=nothing, len=640)
     to_draw = deepcopy(RGB{N0f8}.(img[1,:,:], img[2,:,:], img[3,:,:]))
     colors = [
         RGB{N0f8}(1.0,0.0,0.0), # red
