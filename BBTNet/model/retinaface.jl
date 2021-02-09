@@ -334,7 +334,7 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
     
     for e in start_epoch:num_epochs
         imgs, boxes = iterate(reader, restart=true)
-        if run_gpu; imgs = convert(atype, imgs); end;
+        if run_gpu && imgs !== nothing; imgs = convert(atype, imgs); end;
         iter_no = 1; last_loss = 0; total_batches = size(reader.tr.img_paths, 1);
         curr_batch = 0; curr_lr = lrs_per_epoch[e];
         
@@ -353,7 +353,7 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
             # Updating the model
             momentum!(model, [(imgs, boxes, weight_decay)], lr=curr_lr, gamma=momentum)
             (imgs, boxes) = iterate(reader)
-            if run_gpu; imgs = convert(atype, imgs); end;
+            if run_gpu && imgs !== nothing; imgs = convert(atype, imgs); end;
             iter_no += 1; 
             if imgs !== nothing curr_batch += size(imgs)[end] end
         end
