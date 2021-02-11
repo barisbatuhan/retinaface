@@ -161,7 +161,7 @@ function (model::RetinaFace)(x, y, weight_decay=0)
     h2c_loss, h2b_loss, h2l_loss = get_loss(cls_vals2, bbox_vals2, lm_vals2, y, priors, mode=2) 
     
     if weight_decay > 0 # only taking weights but not biases and moments
-        for p in params(model)
+        for p in Knet.params(model)
             if size(size(p), 1) == 4 && size(p, 4) > 1
                 decay_loss += weight_decay * sum(p .* p)
             end
@@ -199,14 +199,13 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
             continue # if the cropped image has no faces
         end 
             
-        l_cls = Array(value(cls_vals))[1,:,n]; gt = y[n];
+        l_cls = Array(value(cls_vals))[1,:,n];
         
-        prior = priors
         if length(size(priors)) > 2 
-            prior = priors[:,:,n] # returned for mode 1 
+            priors = priors[:,:,n] # returned for mode 1 
         end
         
-        gt, pos_idx, neg_idx = encode_gt_and_get_indices(gt, prior, l_cls, pos_thold, neg_thold)   
+        gt, pos_idx, neg_idx = encode_gt_and_get_indices(y[n], priors, l_cls, pos_thold, neg_thold)   
             
         if pos_idx !== nothing 
             # if boxes with high enough IOU are found                
@@ -215,11 +214,11 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
                 
             if size(lm_indices, 1) > 0 
                 # counting only the ones with landmark data 
-                batch_gt[5:14,pos_idx[lm_indices],n] = gt[5:14,lm_indices]
+                batch_gt[5:14,pos_idx[lm_indices],n] .= gt[5:14,lm_indices]
                 lmN += length(lm_indices)
             end
                 
-            batch_gt[1:4,pos_idx,n] = gt[1:4,:]; bboxN += length(pos_idx);    
+            batch_gt[1:4,pos_idx,n] .= gt[1:4,:]; bboxN += length(pos_idx);    
             batch_cls[1,neg_idx,n] .= 1; batch_cls[2,pos_idx,n] .= 2;       
         end 
     end
@@ -232,7 +231,6 @@ function get_loss(cls_vals, bbox_vals, lm_vals, y, priors; mode=2)
     cls_vals = reshape(cls_vals, (2, N*P))
     loss_cls_neg = nll(cls_vals, vec(batch_cls[1,:,:]))
     loss_cls_pos = nll(cls_vals, vec(batch_cls[2,:,:]))
-    # loss_cls = (ohem_ratio * loss_cls_pos + loss_cls_neg) / (ohem_ratio+1)
     loss_cls = (loss_cls_neg + loss_cls_pos) / 2
     if (isinf(value(loss_cls)) || isnan(value(loss_cls))) loss_cls = 0 end 
     

@@ -17,7 +17,7 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     end
 
     # enlarging gt matrix to match selected anchors
-    pos_gt = zeros(15, num_poses); pos_gt .= gt[:,gt_idx];
+    pos_gt = convert(Array{Float32}, zeros(15, num_poses)); pos_gt .= gt[:,gt_idx];
     
     #selecting negative prior boxes
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
@@ -91,7 +91,7 @@ Returns the anchor boxes with their center_x, center_y, width, height informatio
 function _get_priorboxes(num_anchors, anchor_info, img_size)
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
-    anchors = zeros(4, num_proposals)
+    anchors = convert(Array{Float32}, zeros(4, num_proposals))
 
     counter = 1
     for (idx, f) in enumerate(feature_maps)

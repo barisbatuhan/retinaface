@@ -41,7 +41,7 @@ mutable struct WIDER_Data
 
         if train
             push!(processes, DistortColor()) 
-            push!(processes, RandomCrop(min_ratio=0.5))
+            push!(processes, RandomCrop(min_ratio=0.6, center=true))
             push!(processes, Flip())
             push!(processes, Resize(img_size, img_size))
         else
@@ -58,7 +58,7 @@ mutable struct WIDER_Data
 end
 
 function _clean_bboxes(bboxes)
-    annotations = zeros(15, length(bboxes))
+    annotations = convert(Array{Float32}, zeros(15, length(bboxes)))
     # annotation processing
     for person in 1:length(bboxes)
         z_coords = 0
