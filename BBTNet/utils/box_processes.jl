@@ -7,18 +7,17 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     variances = [1, 1]
     iou_vals = iou(gt[1:4,:], _to_min_max_form(priors))
     # selecting positive prior boxes  
-    pos_pairs = findall(iou_vals .>= pos_thold)
-    pos_gt = zeros(15, length(pos_pairs))
-    gt_idx = getindex.(pos_pairs, [1 2])[:, 2]
-    prior_idx = getindex.(pos_pairs, [1 2])[:, 1]
+    pos_pairs = getindex.(findall(iou_vals .>= pos_thold), [1 2])
+    gt_idx = pos_pairs[:, 2]; prior_idx = pos_pairs[:, 1];
     
-    # enlarging gt matrix to match selected anchors
-    pos_gt .= gt[:,gt_idx]
     num_poses = length(prior_idx)
     if num_poses == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
     end
+
+    # enlarging gt matrix to match selected anchors
+    pos_gt = zeros(15, num_poses); pos_gt .= gt[:,gt_idx];
     
     #selecting negative prior boxes
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
@@ -28,8 +27,8 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
             
     # gt bbox conversion
     selected_priors = priors[:,prior_idx]
-    
     pos_gt[1:4,:] = _to_center_length_form(pos_gt[1:4,:])
+    
     pos_gt[3:4,:] = log.(pos_gt[3:4,:] ./ selected_priors[3:4,:]) ./ variances[1]
     
     pos_gt[1:2,:] = (pos_gt[1:2,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
@@ -39,7 +38,6 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     pos_gt[11:12,:] = (pos_gt[11:12,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
     pos_gt[13:14,:] = (pos_gt[13:14,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
     
-    # print("Pos_indices: ", prior_idx, "&& Neg_indices: ", neg_indices, "\n")
     return pos_gt, prior_idx, neg_indices
 end
 
