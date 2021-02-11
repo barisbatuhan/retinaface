@@ -342,7 +342,7 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
         
         while imgs !== nothing      
             if mod(iter_no, 5) == 1 # prints per 5 batches
-                to_print  = "\n--- Epoch: " * string(e) * " & LR: " * string(round(curr_lr; digits=4))
+                to_print  = "\n--- Epoch: " * string(e) * " & LR: " * string(round(curr_lr; digits=6))
                 to_print *= " & Batch: " * string(curr_batch) * "/" * string(total_batches) * "\n\n"
                 print(to_print)
                 if model.log_file !== nothing 

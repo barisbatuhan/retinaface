@@ -1,8 +1,10 @@
+
 include("../../configs.jl")
 include("metrics.jl")
 
 function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
-    variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]
+    # variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]
+    variances = [1, 1]
     iou_vals = iou(gt[1:4,:], _to_min_max_form(priors))
     # selecting positive prior boxes  
     pos_pairs = findall(iou_vals .>= pos_thold)
@@ -21,11 +23,8 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     #selecting negative prior boxes
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
     neg_indices = getindex.(findall(max_prior_vals .<= neg_thold), [1 2])[:,1]
-    neg_indices = neg_indices[sortperm(losses[neg_indices])]
-    
     neg_cnt = ohem_ratio * num_poses
-    neg_cnt = neg_cnt < 1 ? 1 : neg_cnt 
-    neg_indices = neg_indices[1:neg_cnt]
+    neg_indices = neg_indices[partialsortperm(losses[neg_indices], 1:neg_cnt)]
             
     # gt bbox conversion
     selected_priors = priors[:,prior_idx]
@@ -130,7 +129,8 @@ end
 
 
 function _decode_bboxes(bbox, priors)
-    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
+    # variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
+    variances = [1, 1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end
@@ -140,7 +140,8 @@ function _decode_bboxes(bbox, priors)
 end
 
 function _decode_landmarks(landmarks, priors)
-    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
+    # variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
+    variances = [1, 1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end
