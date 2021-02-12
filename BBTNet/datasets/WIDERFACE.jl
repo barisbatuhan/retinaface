@@ -1,7 +1,6 @@
 import Base: length, size, iterate, eltype, IteratorSize, IteratorEltype, haslength, @propagate_inbounds, repeat, rand, tail
 import .Iterators: cycle, Cycle, take
 
-include("../../DeepJulia/DeepJulia.jl")
 include("../../configs.jl")
 
 mutable struct WIDER_Data

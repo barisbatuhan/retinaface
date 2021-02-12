@@ -1,12 +1,12 @@
 using ArgParse
 
-include("./DeepJulia/DeepJulia.jl")
+include("./../DeepJulia/DeepJulia.jl")
 include("BBTNet/model/retinaface.jl")
 include("BBTNet/datasets/WIDERFACE.jl")
 include("configs.jl")
 
 function parse_cmd()
-    s = ArgParseSettings(commands_are_required = false)
+    s = ArgParseSettings(commands_are_required=false)
     @add_arg_table s begin
         "--batch_size", "-b"
             help = "Batch size to take for training."

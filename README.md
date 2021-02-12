@@ -22,6 +22,8 @@ This project is an unofficial implementation of the paper "RetinaFace: Single-sh
 
 ## First Setup
 
+* First of all, please also pull the repository [DeepJulia](https://github.com/barisbatuhan/DeepJulia) to the directory where retinaface directory is present. Also download the pretrained `ResNet50` and `MobileNetV2` weights from DeepJulia by following the instructions in that repository. If the directory you downloaded is different, then change the DeepJulia path in both `train.jl` and `predict.jl` files.
+
 * All the packages required to be installed are found under `setup.jl`. To install packages to you can directly run that source file (you can also type `make setup` to run it).
 
 * To train or predict boxes and landmarks by using this repository, please initialize the parameters in `configs.jl` first. Especially please assign correct paths for the dataset directory.
