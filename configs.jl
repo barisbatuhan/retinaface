@@ -5,16 +5,16 @@ Global hyper parameters are defined here for simplicity in
 changing their values.
 """
 # Image and Data Paths
-wf_path         = "/home/baristopal20/datasets/widerface/WIDER_"
-wf_labels_path  = "/home/baristopal20/datasets/widerface/retinaface/"
+wf_path         = "/datasets/widerface/WIDER_"
+wf_labels_path  = "/datasets/widerface/retinaface/"
 wf_eval_path    = "./data/"
 
 # Training Parameters
 batch_size      = 10
 num_epochs      = 27
-weight_decay    = 0.0005
+weight_decay    = 0.00005
 momentum        = 0.9
-lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
+lrs             = [1e-3, 1e-3, 1e-4, 1e-5]
 lr_change_epoch = [3, 17, 23]
 
 # Device Parameters

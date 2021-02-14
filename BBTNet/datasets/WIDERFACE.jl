@@ -84,7 +84,8 @@ end
 
 function iterate(data::WIDER_Data; restart::Bool=false)
     
-    imgs, labels, changes = get_batch(data.tr, restart=restart)   
+    imgs, true_labels, changes = get_batch(data.tr, restart=restart)   
+    labels = deepcopy(true_labels)
     if imgs === nothing
         return nothing, nothing
     
