@@ -1,9 +1,9 @@
 using ArgParse, MAT
 
+include("../DeepJulia/DeepJulia.jl")
 include("BBTNet/model/retinaface.jl")
 include("BBTNet/datasets/WIDERFACE.jl")
 include("configs.jl")
-include("./DeepJulia/DeepJulia.jl")
 
 function parse_cmd()
     s = ArgParseSettings()

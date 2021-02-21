@@ -44,8 +44,10 @@ mutable struct WIDER_Data
             push!(processes, Flip())
             push!(processes, Resize(img_size, img_size))
         else
-            img_size = -1
             push!(processes, Squaritize(fill_value=0.5))
+            if img_size != -1
+                push!(processes, Resize(img_size, img_size))
+            end
         end
         
         tr = Transforms(
@@ -84,7 +86,7 @@ end
 
 function iterate(data::WIDER_Data; restart::Bool=false)
     
-    imgs, true_labels, changes = get_batch(data.tr, restart=restart)   
+    imgs, true_labels, changes = get_batch(data.tr, restart=restart) 
     labels = deepcopy(true_labels)
     if imgs === nothing
         return nothing, nothing
@@ -152,9 +154,11 @@ function iterate(data::WIDER_Data; restart::Bool=false)
                 labels[n][1:2:14,:] .+= sq_ch[1]
                 labels[n][2:2:14,:] .+= sq_ch[2]
                 # resizing 
-                res_ch = change["resize"];
-                labels[n][1:2:14,:] ./= res_ch[1]
-                labels[n][2:2:14,:] ./= res_ch[2]
+                if haskey(change, "resize")
+                    res_ch = change["resize"];
+                    labels[n][1:2:14,:] ./= res_ch[1]
+                    labels[n][2:2:14,:] ./= res_ch[2]
+                end
             end
         end
     end

@@ -286,7 +286,7 @@ function predict_image(model::RetinaFace, x; mode=1, filter=true, verbose=true, 
         lm_result = lm_result[:,indices]   
         if verbose
             print("[INFO] Passed NMS Check: ", size(indices, 1),"\n")
-            print("[INFO] Returning results above confidence level: ", conf_level, "\n")
+            print("[INFO] Returning results above confidence level: ", conf_thold, "\n")
         end
         return cls_result, bbox_result, lm_result
     end
@@ -336,11 +336,11 @@ function train_model(model::RetinaFace, reader; val_data=nothing, save_dir=nothi
         iter_no = 1; last_loss = 0; total_batches = size(reader.tr.img_paths, 1);
         curr_batch = 0; curr_lr = lrs_per_epoch[e];
         
-        # for p in params(model)
-        #     if !isnothing(p.opt)
-        #         p.opt.lr = curr_lr
-        #     end
-        # end
+        for p in params(model)
+            if !isnothing(p.opt)
+                p.opt = nothing
+            end
+        end
         
         while imgs !== nothing      
             if mod(iter_no, 5) == 1 # prints per 5 batches
