@@ -8,14 +8,24 @@ changing their values.
 wf_path         = "/datasets/widerface/WIDER_"
 wf_labels_path  = "/datasets/widerface/retinaface/"
 wf_eval_path    = "./data/"
+fddb_path       = "/datasets/fddb/"
+aflw_path       = "/datasets/aflw/"
+
+# Weight Paths
+r50_mat_dir     = "./weights/imagenet-resnet-50-dag.mat"
+
+# Image Manipulation Metrics
+avg_img         = (123, 117, 104)
 
 # Training Parameters
-batch_size      = 10
-num_epochs      = 27
+num_epochs      = 60
 weight_decay    = 0.0005
 momentum        = 0.9
-lrs             = [1e-3, 1e-2, 1e-3, 1e-4]
-lr_change_epoch = [3, 15, 21]
+lrs             = [1e-3, 4e-3, 1e-3, 1e-4]
+lr_change_epoch = [10, 20, 30]
+
+# Evaluation Parameters
+mAP_ious        = [0.5, 0.05, 0.95] # start, step size, end
 
 # Device Parameters
 run_gpu = true

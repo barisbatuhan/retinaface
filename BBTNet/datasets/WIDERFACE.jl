@@ -1,69 +1,60 @@
+using Random
 import Base: length, size, iterate, eltype, IteratorSize, IteratorEltype, haslength, @propagate_inbounds, repeat, rand, tail
 import .Iterators: cycle, Cycle, take
 
+include("../utils/ImageReader.jl")
 include("../../configs.jl")
 
 mutable struct WIDER_Data
-    tr::Transforms
-    train_data::Bool; img_size::Int;
+    dir::String
+    bboxes
+    files::Array{String}
+    batch_size::Int64
+    num_files::Int64
+    num_faces::Int64
+    shuffle::Bool
+    augment::Bool
+    curr_idx::Int64
+    reader::Image_Reader
+    img_size::Int64
+    dtype
     
-    function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, img_size=640, shuffle::Bool=true)
+    function WIDER_Data(dir, label_dir; batch_size::Int64=32, train::Bool=true, img_size=640, shuffle::Bool=true, dtype=Array{Float32})
         files = []
-        bboxes = []
-        if label_dir === nothing
-            bboxes = nothing
-        else
-            bbox_dict = Dict()
-            open(label_dir * "label.txt", "r") do io
-                lines = readlines(io)
-                filename = nothing
-                for line in lines
-                    if line[1] == '#'
-                        if filename !== nothing
-                            push!(bboxes, _clean_bboxes(bbox_dict[filename]))
-                        end
-                        filename = dir * "images/" * line[3:end]
-                        push!(files, filename)
-                        bbox_dict[filename] = []
-                    else
-                        bbox = [parse(Float64, x) for x in split(line, " ")]
-                        bbox[3] += bbox[1]
-                        bbox[4] += bbox[2]
-                        push!(bbox_dict[filename], bbox)
+        bbox_dict = Dict()
+        num_faces = 0
+        open(label_dir * "label.txt", "r") do io
+            lines = readlines(io)
+            filename = nothing
+            for line in lines
+                if line[1] == '#'
+                    if filename !== nothing
+                        bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
                     end
+                    filename = line[3:end]
+                    push!(files, filename)
+                    bbox_dict[filename] = []
+                else
+                    bbox = [parse(Float64, x) for x in split(line, " ")]
+                    bbox[3] += bbox[1]
+                    bbox[4] += bbox[2]
+                    num_faces += 1
+                    push!(bbox_dict[filename], bbox)
                 end
-                push!(bboxes, _clean_bboxes(bbox_dict[filename]))
             end
-        end
-
-        processes = [];
-
-        if train
-            push!(processes, DistortColor()) 
-            push!(processes, RandomCrop(min_ratio=0.6, center=true))
-            push!(processes, Flip())
-            push!(processes, Resize(img_size, img_size))
-        else
-            push!(processes, Squaritize(fill_value=0.5))
-            if img_size != -1
-                push!(processes, Resize(img_size, img_size))
-            end
+            bbox_dict[filename] = _clean_bboxes(bbox_dict[filename])
         end
         
-        tr = Transforms(
-            processes, convert(Array{String}, files), labels=bboxes, batch_size=batch_size, 
-            img_size=img_size, shuffle=shuffle, return_changes=true)
-        
-        return new(tr, train, img_size)
+        return new(dir, bbox_dict, files, batch_size, length(files), num_faces, shuffle, train, 1, Image_Reader(train), img_size, dtype)
     end
 end
 
 function _clean_bboxes(bboxes)
-    annotations = convert(Array{Float32}, zeros(15, length(bboxes)))
+    annotations = zeros(15, length(bboxes))
     # annotation processing
     for person in 1:length(bboxes)
         z_coords = 0
-        iter_cnt = length(bboxes[person]) == 4 ? 4 : length(bboxes[person])-1 # val data and train data differences
+        iter_cnt = length(bboxes[person]) == 4 ? 4 : length(bboxes[person])-1 # differences in val data and train data format
         for iter in 1:iter_cnt
             if (iter > 4) && (mod(iter, 3) == 1)
                 z_coords += 1
@@ -84,84 +75,30 @@ function _clean_bboxes(bboxes)
     return annotations
 end
 
-function iterate(data::WIDER_Data; restart::Bool=false)
+function iterate(data::WIDER_Data, state=ifelse(
+            data.shuffle, randperm(data.num_files), collect(1:data.num_files)))
     
-    imgs, true_labels, changes = get_batch(data.tr, restart=restart) 
-    labels = deepcopy(true_labels)
-    if imgs === nothing
-        return nothing, nothing
-    
-    elseif labels !== nothing
-        # for each image in a batch, labels should be corrected.
-        for n in 1:size(imgs)[end] 
-            change = changes[n]
-            
-            if data.train_data
-                # random crop
-                crop_ch = change["crop"]; len = crop_ch[3] - crop_ch[1];
-                labels[n][1:2:14,:] .-= crop_ch[1]
-                labels[n][2:2:14,:] .-= crop_ch[2]
-                ## fixing the left side to 0s if they are out of the range
-                outrangex = findall(labels[n][[1,2],:] .< 0)
-                labels[n][outrangex] .= 0
-                ## right side of the box is out of the range
-                rightrangex = getindex.(findall(labels[n][3,:] .>= len))
-                labels[n][3, rightrangex] .= len
-                rightrangey = getindex.(findall(labels[n][4,:] .>= len))
-                labels[n][4, rightrangey] .= len
-                ## if box is completely out of the range
-                left_search = findall(labels[n][[1, 2],:] .>= len)
-                if length(left_search) > 0
-                    leftout = getindex.(left_search, [1 2])[:, 2]
-                    labels[n][:,leftout] .= -1
-                end
-                right_search = findall(labels[n][[3, 4],:] .<= 0)
-                if length(right_search) > 0
-                    rightout = getindex.(right_search, [1 2])[:, 2]
-                    labels[n][:,rightout] .= -1
-                end
-                ## if a landmark is out of the range
-                right_search = findall(labels[n][5:1:14,:] .>= len)
-                if length(right_search) > 0
-                    rightrange = getindex.(right_search, [1 2])[:, 2]
-                    labels[n][5:15, rightrange] .= -1
-                end
-                left_search = findall(labels[n][5:1:14,:] .< 0)
-                if length(left_search) > 0
-                    leftrange = getindex.(left_search, [1 2])[:, 2]
-                    labels[n][5:15, leftrange] .= -1
-                end
-                # flip
-                crop_ch = change["flip"]
-                if crop_ch[1]
-                    labels[n][1:2:14,:] .= len .- labels[n][1:2:14,:]
-                    temp = labels[n][3,:]
-                    labels[n][3,:] .= labels[n][1,:]
-                    labels[n][1,:] .= temp
-                    labels[n][labels[n] .> len] .= -1
-                end
-                # resizing
-                res_ch = change["resize"];
-                labels[n][1:2:14,:] ./= res_ch[1]
-                labels[n][2:2:14,:] ./= res_ch[2]
-                labels[n][labels[n] .< 0] .= -1
-                # eliminating the ones outside of the ROI area
-                bbox_indices = getindex.(findall(labels[n][1,:] .>= 0))
-                labels[n] = labels[n][:,bbox_indices]  
-            else
-                sq_ch = change["squaritize"];
-                # squaritizing 
-                labels[n][1:2:14,:] .+= sq_ch[1]
-                labels[n][2:2:14,:] .+= sq_ch[2]
-                # resizing 
-                if haskey(change, "resize")
-                    res_ch = change["resize"];
-                    labels[n][1:2:14,:] ./= res_ch[1]
-                    labels[n][2:2:14,:] ./= res_ch[2]
-                end
-            end
+    if state === nothing || length(state) < data.batch_size
+        return (nothing, nothing), nothing
+    else 
+        imgs = data.files[state[1:data.batch_size]]
+        imgs_arr = zeros(3, data.img_size, data.img_size, data.batch_size)
+        labels = []
+        idx = 1
+        for img_path in imgs
+            img_dir = data.dir * "images/" * img_path
+            img, box = read_img(img_dir, len=data.img_size, r=data.reader, boxes=data.bboxes[img_path])
+            img = reverse(img, dims=1) # needed for using pytorch model
+            push!(labels, box)
+            imgs_arr[:,:,:,idx] .= img
+            idx += 1
+        end
+        imgs_arr = convert(data.dtype, permutedims(imgs_arr, (3,2,1,4)))
+        
+        if length(state) <= data.batch_size
+            return (imgs_arr, labels), []
+        else
+            return (imgs_arr, labels), state[data.batch_size+1:end]
         end
     end
-
-    return imgs, labels
 end

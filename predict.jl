@@ -1,7 +1,7 @@
 using ArgParse
 
-include("BBTNet/model/retinaface.jl")
-include("../DeepJulia/DeepJulia.jl")
+include("BBTNet/models/retinaface.jl")
+include("./BBTNet/utils/ImageReader.jl")
 include("./BBTNet/utils/draw.jl")
 include("configs.jl")
 
@@ -58,7 +58,7 @@ function main()
     
     if save_path !== nothing
         init_img = (img .+ avg_img) ./ 255
-        plotted = draw_boxes_and_landmarks(init_img, b, lms=l, conf=c, len=640)
+        plotted = draw_boxes_and_landmarks(init_img, b, l; conf=c, len=640)
         png(plotted, save_path)
     end
     return c, b, l

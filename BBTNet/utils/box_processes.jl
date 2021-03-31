@@ -1,34 +1,36 @@
-
 include("../../configs.jl")
-include("metrics.jl")
+include("../core/metrics.jl")
 
 function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
-    # variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]
-    variances = [1, 1]
+    variances = size(priors, 2) == 102300 ? [1, 1] : [0.2, 0.1]
     iou_vals = iou(gt[1:4,:], _to_min_max_form(priors))
     # selecting positive prior boxes  
-    pos_pairs = getindex.(findall(iou_vals .>= pos_thold), [1 2])
-    gt_idx = pos_pairs[:, 2]; prior_idx = pos_pairs[:, 1];
+    pos_pairs = findall(iou_vals .>= pos_thold)
+    pos_gt = zeros(15, length(pos_pairs))
+    gt_idx = getindex.(pos_pairs, [1 2])[:, 2]
+    prior_idx = getindex.(pos_pairs, [1 2])[:, 1]
     
+    # enlarging gt matrix to match selected anchors
+    pos_gt .= gt[:,gt_idx]
     num_poses = length(prior_idx)
     if num_poses == 0 
         # if no positive anchor boxes are found, then no loss will be calculated
         return nothing, nothing, nothing
     end
-
-    # enlarging gt matrix to match selected anchors
-    pos_gt = convert(Array{Float32}, zeros(15, num_poses)); pos_gt .= gt[:,gt_idx];
     
     #selecting negative prior boxes
     max_prior_vals, max_prior_idx = findmax(iou_vals; dims=2) 
     neg_indices = getindex.(findall(max_prior_vals .<= neg_thold), [1 2])[:,1]
+    neg_indices = neg_indices[sortperm(losses[neg_indices])]
+    
     neg_cnt = ohem_ratio * num_poses
-    neg_indices = neg_indices[partialsortperm(losses[neg_indices], 1:neg_cnt)]
+    neg_cnt = neg_cnt < 1 ? 1 : neg_cnt 
+    neg_indices = neg_indices[1:neg_cnt]
             
     # gt bbox conversion
     selected_priors = priors[:,prior_idx]
-    pos_gt[1:4,:] = _to_center_length_form(pos_gt[1:4,:])
     
+    pos_gt[1:4,:] = _to_center_length_form(pos_gt[1:4,:])
     pos_gt[3:4,:] = log.(pos_gt[3:4,:] ./ selected_priors[3:4,:]) ./ variances[1]
     
     pos_gt[1:2,:] = (pos_gt[1:2,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
@@ -38,6 +40,7 @@ function encode_gt_and_get_indices(gt, priors, losses, pos_thold, neg_thold)
     pos_gt[11:12,:] = (pos_gt[11:12,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
     pos_gt[13:14,:] = (pos_gt[13:14,:] .- selected_priors[1:2,:]) ./ (variances[2] .* selected_priors[3:4,:])
     
+    # print("Pos_indices: ", prior_idx, "&& Neg_indices: ", neg_indices, "\n")
     return pos_gt, prior_idx, neg_indices
 end
 
@@ -91,7 +94,7 @@ Returns the anchor boxes with their center_x, center_y, width, height informatio
 function _get_priorboxes(num_anchors, anchor_info, img_size)
     feature_maps = [Int(ceil(img_size / scale["stride"])) for scale in anchor_info]
     num_proposals = num_anchors * sum([i*i for i in feature_maps])
-    anchors = convert(Array{Float32}, zeros(4, num_proposals))
+    anchors = zeros(4, num_proposals)
 
     counter = 1
     for (idx, f) in enumerate(feature_maps)
@@ -127,8 +130,7 @@ end
 
 
 function _decode_bboxes(bbox, priors)
-    # variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
-    variances = [1, 1]
+    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end
@@ -138,8 +140,7 @@ function _decode_bboxes(bbox, priors)
 end
 
 function _decode_landmarks(landmarks, priors)
-    # variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
-    variances = [1, 1]
+    variances = size(priors, 2) > 100000 ? [1, 1] : [0.2, 0.1]
     if length(size(priors)) == 2
         priors = reshape(priors, (size(priors)..., 1))
     end
