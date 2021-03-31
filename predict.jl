@@ -61,6 +61,9 @@ function main()
         plotted = draw_boxes_and_landmarks(init_img, b, l; conf=c, len=640)
         png(plotted, save_path)
     end
+    
+    println("# of persons found:", size(c, 1))
+    
     return c, b, l
 end
 

@@ -13,5 +13,6 @@ Pkg.add("FileIO")
 Pkg.add("PyCall")
 Pkg.add("IJulia")
 Pkg.add("ArgParse")
+Pkg.add("Plots")
 
 Pkg.precompile()

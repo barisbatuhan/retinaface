@@ -286,7 +286,7 @@ function predict_image(model::RetinaFace, x; mode=1, filter=true, verbose=true, 
         lm_result = lm_result[:,indices]   
         if verbose
             print("[INFO] Passed NMS Check: ", size(indices, 1),"\n")
-            print("[INFO] Returning results above confidence level: ", conf_level, "\n")
+            print("[INFO] Returning results above confidence level: ", conf_thold, "\n")
         end
         return cls_result, bbox_result, lm_result
     end
