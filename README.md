@@ -67,8 +67,8 @@ Here, AP is calculated by taking the IOU threshold as 0.5.
 
 ## Extra Visualization
 
-![Image2](./data/results/evaluated2.png)
+![Image2](./data/results/evaluated2.jpg)
 
-![Image3](./data/results/evaluated3.png)
+![Image3](./data/results/evaluated3.jpg)
 
 
